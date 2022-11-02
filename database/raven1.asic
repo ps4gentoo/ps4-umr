@@ -1,0 +1,11 @@
+raven1 vega10.soc15 3 10 2 1
+gfx910 GC 0 ip/gc_9_1_0.reg
+vcn100 VCN 0 ip/vcn_1_0_0.reg
+dcn100 DCN 0 ip/dcn_1_0_0.reg
+nbio700 NBIO 0 ip/nbio_7_0_0.reg
+sdma0410 SDMA0 0 ip/sdma0_4_1_0.reg
+hdp400 HDP 0 ip/hdp_4_0_0.reg
+oss400 OSSSYS 0 ip/osssys_4_0_0.reg
+mmhub910 MMHUB 0 ip/mmhub_9_1_0.reg
+mp1000 MP0 0 ip/mp_10_0_0.reg
+pwr1000 PWR 0 ip/pwr_10_0_0.reg

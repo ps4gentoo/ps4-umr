@@ -1,0 +1,9 @@
+stoney null 2 8 2 1
+uvd600 null 0 ip/uvd_6_0_0.reg
+vce300 null 0 ip/vce_3_0_0.reg
+gmc810 null 0 ip/gmc_8_1_0.reg
+dce1100 null 0 ip/dce_11_0_0.reg
+gfx810 null 0 ip/gfx_8_1_0.reg
+smu800 null 0 ip/smu_8_0_0.reg
+oss300 null 0 ip/oss_3_0_0.reg
+bif510 null 0 ip/bif_5_1_0.reg

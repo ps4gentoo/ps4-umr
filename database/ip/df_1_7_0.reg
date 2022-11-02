@@ -1,0 +1,15 @@
+4
+mmDF_CS_AON0_CoherentSlaveModeCtrlA0 0 0x214 1 0 0
+	ForceParWrRMW 3 3
+mmDF_CS_AON0_DramBaseAddress0 0 0x44 5 0 0
+	AddrRngVal 0 0
+	LgcyMmioHoleEn 1 1
+	IntLvNumChan 4 7
+	IntLvAddrSel 8 10
+	DramBaseAddr 12 31
+mmDF_PIE_AON0_DfGlobalClkGater 0 0xfc 1 0 0
+	MGCGMode 0 3
+mmFabricConfigAccessControl 0 0x410 3 0 0
+	CfgRegInstAccEn 0 0
+	CfgRegInstAccRegLock 1 1
+	CfgRegInstID 16 23

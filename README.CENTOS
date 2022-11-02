@@ -1,0 +1,8 @@
+The following command is all that is required to enable building umr on a fresh
+CentOS 9 STREAM install (after an initial "yum -y update"):
+
+yum install cmake automake autoconf libdrm-devel llvm-devel llvm-static libpciaccess* ncurses-devel zlib-devel libdrm-devel vim gcc gcc-c++ gdb strace make libSDL2* SDL2-devel* 
+
+(note strace/gdb/vim aren't strictly necessary but I tend to install those reflexively ...)
+
+

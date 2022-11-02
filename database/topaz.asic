@@ -1,0 +1,6 @@
+topaz null 2 5 2 0
+gmc700 null 0 ip/gmc_7_0_0.reg
+gfx800 null 0 ip/gfx_8_0_0.reg
+oss200 null 0 ip/oss_2_0_0.reg
+smu711 null 0 ip/smu_7_1_1.reg
+bif500 null 0 ip/bif_5_0_0.reg

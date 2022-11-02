@@ -1,0 +1,13 @@
+; comment
+; this syntax will be used by mmio/vram/sysram callbacks to pretend
+; like we're on a live system to allow umr testing with known answers
+;
+;
+
+SYSRAM@0x123456000={...} ; data is specified as a unformated list of hexadecimal bytes (leading 0)
+VRAM@0x123456000={...} ; data specified like SYSRAM
+MMIO@0x12345={...[,...]} ; can specify multiple values that will be read in turn with the last value being read on all subsequent reads
+; note reads from select special registers like SQ_IND_INDEX/DATA or MM_INDEX/DATA will be
+; interpreted as SQ or VRAM accesses and not go through the MMIO lookup
+SQ@0x12345={...} ; SQ indirect space where address is the value of mmSQ_IND_INDEX
+

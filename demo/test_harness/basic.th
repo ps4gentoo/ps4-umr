@@ -1,0 +1,11 @@
+; comment
+; this syntax will be used by mmio/vram/sysram callbacks to pretend
+; like we're on a live system to allow umr testing with known answers
+;
+;
+
+SYSRAM@0x1234000	= { 11223344}
+VRAM@0x443322000 =	{	667788990_011223344		} ; you can break up bytes of memory with any non-isxdigit() char or 'x' or 'X' 
+MMIO@0x1000 = {0x99, 0x100, 0x111} ; variable length arrays of 32-bit words separated by a comma
+VMID@1 ;sets up the necessary registers to enable VM translation on the given context
+MAPVA@1,1000 = 0x5000 ;sets up a page table such that the virtual address 1000 on VMID 1 maps to linear address 0x5000

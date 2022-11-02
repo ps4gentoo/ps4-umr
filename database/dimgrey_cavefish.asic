@@ -1,0 +1,11 @@
+dimgrey_cavefish dimgrey_cavefish.soc15 4 10 2 0
+athub210 ATHUB 0 ip/athub_2_1_0.reg
+gfx1030 GC 0 ip/gc_10_3_0.reg
+hdp500 HDP 0 ip/hdp_5_0_0.reg
+mmhub200 MMHUB 0 ip/mmhub_2_0_0.reg
+mp1100 MP0 0 ip/mp_11_0_0.reg
+oss500 OSSSYS 0 ip/osssys_5_0_0.reg
+umc800 UMC 0 ip/umc_8_7_0.reg
+vcn300 VCN0 0 ip/vcn_3_0_0.reg
+dcn300 DCN 0 ip/dcn_3_0_0.reg
+nbio230 NBIO 0 ip/nbio_2_3_0.reg

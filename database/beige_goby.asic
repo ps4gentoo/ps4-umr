@@ -1,0 +1,13 @@
+beige_goby beige_goby.soc15 4 12 2 0
+athub210 ATHUB 0 ip/athub_2_1_0.reg
+gfx1030 GC 0 ip/gc_10_3_0.reg
+hdp500 HDP 0 ip/hdp_5_0_0.reg
+mmhub200 MMHUB 0 ip/mmhub_2_0_0.reg
+mp1100 MP0 0 ip/mp_11_0_0.reg
+oss500 OSSSYS 0 ip/osssys_5_0_0.reg
+umc870{0} UMC 0 ip/umc_8_7_0.reg
+umc870{1} UMC 1 ip/umc_8_7_0.reg
+vcn300 VCN0 0 ip/vcn_3_0_0.reg
+dcn303 DCN 0 ip/dcn_3_0_3.reg
+dpcs303 DPCS 0 ip/dpcs_3_0_3.reg
+nbio230 NBIO 0 ip/nbio_2_3_0.reg

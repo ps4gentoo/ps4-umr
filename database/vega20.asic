@@ -1,0 +1,14 @@
+vega20 vega20.soc15 3 13 2 0
+gfx900 GC 0 ip/gc_9_0_0.reg
+uvd700 UVD 0 ip/uvd_7_0_0.reg
+vce400 VCE 0 ip/vce_4_0_0.reg
+dce1200 DCE 0 ip/dce_12_0_0.reg
+hdp400 HDP 0 ip/hdp_4_0_0.reg
+nbio610 NBIO 0 ip/nbio_6_1_0.reg
+oss420 OSSSYS 0 ip/osssys_4_2_0.reg
+sdma0420 SDMA0 0 ip/sdma0_4_2_0.reg
+sdma1420 SDMA1 0 ip/sdma1_4_2_0.reg
+thm900 THM 0 ip/thm_9_0_0.reg
+mmhub100 MMHUB 0 ip/mmhub_1_0_0.reg
+mp900 MP0 0 ip/mp_9_0_0.reg
+umc611 UMC 0 ip/umc_6_1_1.reg

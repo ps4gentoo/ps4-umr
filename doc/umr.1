@@ -1,0 +1,325 @@
+.TH UMR 1 "February 2022" "AMD (c) 2022" "User Manuals"
+.SH NAME
+umr \- AMDGPU Userspace Register Debugger
+.SH DESCRIPTION
+.B umr
+is a tool to read and display, as well as write to AMDGPU device
+MMIO, PCIE, SMC, and DIDT registers via userspace.  It can autodetect
+and scan AMDGPU devices (SI and up).
+.SH Device Selection
+.IP "--database-path, -dbp <path>"
+Specify a database path for register, ip, and asic model data.
+.IP "--gpu, -g <asicname>(@<instance> | =<pcidevice>)"
+Select a gpu by ASIC name and either the instance number or the PCI bus identifier.  For instance,
+"raven1@1" would pick the raven1 device in the 2nd DRI instance slot.  Similarly,
+"raven1=0000:06:00.0" would pick a raven1 device with the PCI bus address '0000:06:00.0'.
+.IP "--instance, -i <number>"
+Pick a device instance to work with.  Defaults to the 0'th device.  The instance
+refers to a directory under
+.B /sys/kernel/debug/dri/
+where 0 is the first card probed.
+.IP "--force, -f <number>"
+Force a PCIE Device ID in hex or by asic name.  This is used in case the amdgpu driver
+is not yet loaded or a display is not yet attached.  A '.' prefix will specify a virtual
+device which is handy for looking up register decodings for a device not present in the system,
+for instance, '.vega10'.
+.IP "--pci <device>"
+Force a specific PCI device using the domain:bus:slot.function format in hex.
+This is useful when more than one GPU is available. If the amdgpu driver is
+loaded the corresponding instance will be automatically detected.
+.IP "--gfxoff, -go <0 | 1>"
+Turn on or off GFXOFF on select hardware.  A non-zero value enables the GFXOFF feature and
+a zero value disables it.
+.IP "--vm_partition, -vmp <-1, 0...n>"
+Select a VM partition for all GPUVM accesses.  Default is -1 which
+refers to the 0'th instance of the VM hub which is not the same as
+specifying '0'.  Values above -1 are for ASICs with multiple IP instances.
+.IP "--option, -O <string>[,<string>,...]"
+Specify options to the tool.  Multiple options can be specified as comma
+separated strings.  Options should be specified before --update or --force commands
+(among others) to enable options specified.
+
+.B quiet
+     Disable various informative but not required (for functionality) outputs.
+
+.B read_smc
+     Enable scanning of SMC registers.
+
+.B bits
+     enables displaying bitfields for scanned blocks.
+
+.B bitsfull
+     enables displaying bitfields using their entire path for scanned blocks.
+
+.B empty_log
+     Empties the MMIO log after reading it.
+
+.B follow
+     Causes the --logscan command to repeatedly produce output without
+     exiting.
+
+.B no_follow_ib
+     Instruct the --ring-stream command to not attempt to follow IBs pointed to by the packets
+     in the ring.
+
+.B use_pci
+     Enable PCI access for MMIO instead of using debugfs.  Used by the --read,
+     --scan, --top, --write, and --write-bit commands.  Does not currently
+     support multiple instances of the same GPU (PCI device ID).  Note that access
+     to non-MMIO registers might be disabled when using this flag.
+
+.B use_colour
+     Enable colour output for --top command, scales from blue, green, yellow, to red.  Also
+     accepted is 'use_color'.
+
+.B no_kernel
+     Disable using kernel files to access the device.  Implies ''use_pci''.  This is meant to
+     be used only if the KMD is hung or otherwise not working correctly.  Using it on live systems
+     may result in race conditions.
+
+.B verbose
+     Enable verbose diagnostics (used in --vram).
+
+.B halt_waves
+     Halt/resume all waves while reading wave status.
+
+.B disasm_early_term
+     Terminate shader disassembly when first s_endpgm is hit.  This is required for
+     older UMDs (or non-mesa UMDs) that don't use the quintuple 0xBF9F0000 to signal the true
+     end of a shader.
+
+.B no_disasm
+     Disable shader disassembler logic (still outputs text just doesn't use LLVM to decode).  Useful
+     if the linked llvm-dev doesn't support the hardware being debugged.  Avoids segfualts/asserts.
+
+.B disasm_anyways
+     Enable shader disassembly in --waves even if the rings aren't halted.
+
+.B wave64
+     Enable full 64 wave disassembly
+
+.B full_shader
+     Enable full shader disassembly in --waves when '-O bits' is used and the shader is found in
+     a gfx or compute ring.
+
+.B no_fold_vm_decode
+    Disable folding of PDEs when VM decoding multiple pages of memory.  By default,
+    when subsequent pages are decoded if PDEs match previous pages they are omitted to cut down
+    on the verbosity of the output.  This option disables this and will print the full chain of
+    PDEs for every page decoded.
+
+.B no_scan_waves
+   Disable scanning wave data during --ring-stream output.
+
+.B force_asic_file
+   Force using a database .asic file matching in pci.did instead of IP discovery.
+
+.SH Bank Selection
+.IP "--bank, -b <se> <sh> <instance>"
+Select a GRBM se/sh/instance bank in decimal.  Can use 'x' to denote a broadcast selection.
+.IP "--sbank, -sb <me> <pipe> <queue> [vmid]"
+Select a SRBM me/pipe/queue bank in decimal.  VMID is optional (default: 0).
+.IP "--cbank, -cb <context_reg_bank>"
+Select a context register bank (value is multiplied by 0x1000).  Used for context registers
+in the range 0xA000..0xAFFF.
+.SH Device Information
+.IP "--config, -c"
+Print out configuation data read from kernel driver.
+.IP "--enumerate, -e"
+Enumerate all AMDGPU supported devices.
+.IP "--list-blocks -lb"
+List all blocks attached to the asic that have been detected.
+.IP "--list-regs, -lr <string>"
+List all registers in an IP block (can use '-O bits' to list bitfields)
+
+.SH Register Access
+.IP "--lookup, -lu <address_or_regname> <number>"
+Look up an MMIO register by address and bitfield decode the value specified (with 0x prefix) or by
+register name.  The register name string must include the ipname, e.g., uvd6.mmUVD_CONTEXT_ID.
+.IP "--write -w <string> <number>"
+Write a value specified in hex to a register specified with a complete
+register path in the form <
+.B asicname.ipname.regname
+>.  For example, fiji.uvd6.mmUVD_CGC_GATE.  The value of asicname and/or ipname can be
+.B *
+to simplify scripting.  This command can be used multiple times to
+write to multiple registers in a single invocation.
+.IP "--writebit -wb <string> <number>"
+Write a value specified in hex to a register bitfield specified with a
+complete register path as in the
+.B --write
+command.
+.IP "--read, -r <string>"
+Read a value from a register specified by a register path to stdout.
+This command uses the same syntax as the
+.B --write
+command but also allows
+.B *
+for the regname field to read an entire block.  Additionally,
+a
+.B *
+can be appended to a register name to read any register that contains
+a partial match.  For instance, "*.vcn10.ADDR*" would read any register
+from the 'VCN10' block which contains 'ADDR' in the name.
+.IP "--scan, -s <string>"
+Scan and print an IP block by name, for example,
+.B uvd6
+or
+.B carrizo.uvd6.
+Can be used multiple times in a single invocation.
+
+.SH Device Utilization
+.IP "--top, -t"
+Summarize GPU utilization.  Can select a SE block with --bank.  Relevant
+options that apply are:
+.B use_colour
+and
+.B use_pci
+.
+.IP "--waves, -wa [ <ring_name> | <vmid>@<addr>.<size> ]"
+Print out information about any active CU waves.  Note that if GFX power gating
+is enabled this command may result in a GPU hang.  It's unlikely unless you're
+invoking it very rapidly.  Unlike the wave count reading in --top this command
+will operate regardless of whether GFX PG is enabled or not.  Can use
+.B bits
+to decode the wave bitfields.  An optional ring name can be specified
+(default: gfx) to search for pointers to active shaders to find extra debugging
+information.  Alternatively, an IB can be specified by a vmid, address, and size
+(in hex bytes) triplet.
+.IP "--profiler, -prof [pixel= | vertex= | compute=]<nsamples> [ring]"
+Capture 'nsamples' samples of wave data.  Optionally specify a ring to use when
+searching for IBs that point to shaders.  Defaults to 'gfx'.  Additionally, the type
+of shader can be selected for as well to only profile a given type of shader.
+
+.SH Virtual Memory Access
+VMIDs are specified in umr as 16 bit numbers where the lower 8 bits indicate the hardware
+VMID and the upper 8 bits indicate the which VM space to use.
+
+.B	0 - GFX hub
+
+.B	1 - MM hub
+
+.B      2 - VC0 hub
+
+.B      3 - VC1 hub
+
+
+For instance, 0x107 would specify the 7'th VMID on the MM hub.
+
+
+.IP "--vm-decode, -vm vmid@<address> <num_of_pages>"
+Decode page mappings at a specified address (in hex) from the VMID specified.
+The VMID can be specified in hexadecimal (with leading '0x') or in decimal.
+Implies '-O verbose' for the duration of the command so does not require it
+to be manually specified.
+
+.IP "--vm-read, -vr [vmid@]<address> <size>"
+Read 'size' bytes (in hex) from the address specified (in hexadecimal) from VRAM
+to stdout.  Optionally specify the VMID (in decimal or in hex with a 0x prefix)
+treating the address as a virtual address instead.  Can use 'use_pci' to
+directly access VRAM.
+
+.IP "--vm-write, -vw [vmid@]<address> <size>"
+Write 'size' bytes (in hex) to the address specified (in hexadecimal) to VRAM
+from stdin.
+
+.IP "--vm-write-word, -vww [vmid@]<address> <data>"
+Write a 32-bit word 'data' (in hex) to a given address (in hex) in host machine order.
+
+.IP "--vm-disasm, -vdis [<vmid>@]<address> <size>"
+Disassemble 'size' bytes (in hex) from a given address (in hex).  The size can be
+specified as zero to have umr try and compute the shader size.
+
+.SH Ring and PM4 Decoding
+.IP "--ring-stream, -RS <string>[range]"
+Read the contents of the ring named by the string
+.B amdgpu_ring_<string>,
+i.e. without the
+.B amdgpu_ring
+prefix. By default it reads and prints the entire ring.  A
+range is optional and has the format '[start:end]'. The
+starting and ending address are non-negative integers or
+the '.' (dot) symbol, which indicates the
+.B rptr
+when on the left side and
+.B wptr
+when on the right side of the range.
+For instance,
+"-R gfx" prints the entire gfx ring, "-R gfx[0:16]" prints
+the contents from 0 to 16 inclusively, and "-R gfx[.]" or
+"-R gfx[.:.]" prints the range [rptr,wptr]. When one of
+the range limits is a number while the other is the dot, '.',
+then the number indicates the relative range before or after the
+corresponding ring pointer. For instance, "-R sdma0[16:.]"
+prints [wptr-16, wptr] words of the SDMA0 ring, and
+"-R sdma1[.:32]" prints [rptr, rptr+32] double-words of the
+SDMA1 ring. The contents of the ring is always interpreted,
+if it can be interpreted.
+.IP "--dump-ib, -di [vmid@]address length [pm]"
+Dump an IB packet at an address with an optional VMID.  The length is specified
+in bytes.  The type of decoder <pm> is optional and defaults to PM4 packets.
+Can specify '3' for SDMA packets, '2' for MES packets.
+.IP "--dump-ib-file, -df filename [pm]"
+Dump an IB stored in a file as a series of hexadecimal DWORDS one per line.
+Optionally supply a PM type, can specify '2' for MES packets, '3' for SDMA IBs, or '4' for
+PM4 IBs.  The default is PM4.
+.IP "--header-dump, -hd [HEADER_DUMP_reg]"
+Dump the contents of the HEADER_DUMP buffer and decode the opcode into a human readable string.
+.IP "--print-cpc, -cpc"
+Dump CPC register data.
+.IP "--print-sdma, -sdma"
+Dump SDMA register data.
+.IP "--logscan, -ls"
+Read and display contents of the MMIO register log.  Usually specified
+with '-O bits,follow,empty_log' to enable continual dumping of the trace
+log.
+
+.SH Power and Clock
+.IP "--power, -p"
+Read the content of clocks, temperature, gpu loading at runtime options 'use_colour' to colourize output.
+
+.IP "--clock-scan -cs [clock]"
+Scan the current hierarchy value of each clock.  Default will list all the hierarchy value of clocks.
+otherwise will list the corresponding clock, eg. sclk.
+
+.IP "--clock-manual, -cm [clock] [value]"
+Set the value of the corresponding clock.  Use -cs command to check hierarchy values of clock and then
+use -cm value to set the clock.
+
+.IP "--clock-high, -ch"
+Set power_dpm_force_performance_level to high.
+
+.IP "--clock-low, -cl"
+Set power_dpm_force_performance_level to low.
+
+.IP "--clock-auto, -ca"
+Set power_dpm_force_performance_level to auto.
+
+.IP "--ppt-read, -pptr [ppt_field_name]"
+Read powerplay table value and print it to stdout.  This command will print all the powerplay table
+information or the corresponding string in powerplay table.
+
+.IP "--gpu-metrics, -gm"
+Print the GPU metrics table for the device.
+
+.SH "Notes"
+
+- The "Waves" field in the DRM section of --top only works if GFX PG has been disabled.  Otherwise,
+GPU hangs occur frequently.  When PG is enabled it will read a constant 0.
+
+.SH "Environmental Variables"
+
+.B UMR_LOGGER
+    Directory to output "umr.log" file when capturing samples with the --top command.
+
+.B UMR_DATABASE_PATH
+    Should be set to the top directory of the database tree used for register, IP, and ASIC model data.
+
+.SH FILES
+.B ${CMAKE_INSTALL_PREFIX}/share/bash-completion/completions/umr
+contains completion for bash shells. You'd normally source this file in your ~/.bashrc.
+
+.B ${CMAKE_INSTALL_PREFIX}/share/umr/database
+contains database files for ASICs, IPs, and registers.
+.B UMR_DATABASE_PATH
+is usually set to point to here.

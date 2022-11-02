@@ -1,0 +1,12 @@
+vangogh vangogh.soc15 4 11 2 1
+clk1150 CLK 0 ip/clk_11_5_0.reg
+dcn301 DCN 0 ip/dcn_3_0_1.reg
+smuio1100 SMUIO 0 ip/smuio_11_0_0.reg
+thm1102 THM 0 ip/thm_11_0_2.reg
+gfx1030 GC 0 ip/gc_10_3_0.reg
+hdp500 HDP 0 ip/hdp_5_0_0.reg
+mmhub230 MMHUB 0 ip/mmhub_2_3_0.reg
+mp1150 MP0 0 ip/mp_11_5_0.reg
+nbio720 NBIO 0 ip/nbio_7_2_0.reg
+oss500 OSSSYS 0 ip/osssys_5_0_0.reg
+vcn300 VCN 0 ip/vcn_3_0_0.reg

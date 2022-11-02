@@ -1,0 +1,36 @@
+4
+mmMCA_UMC_UMC0_MCUMC_ADDRT0 0 0x3c4 3 1 0
+	ErrorAddr 0 55
+	LSB 56 61
+	Reserved 62 63
+mmMCA_UMC_UMC0_MCUMC_STATUST0 0 0x3c2 24 1 0
+	ErrorCode 0 15
+	ErrorCodeExt 16 21
+	RESERV0 22 31
+	ErrCoreId 32 37
+	RESERV1 38 39
+	Scrub 40 40
+	RESERV2 41 42
+	Poison 43 43
+	Deferred 44 44
+	UECC 45 45
+	CECC 46 46
+	RESERV3 47 51
+	Transparent 52 52
+	SyndV 53 53
+	RESERV4 54 54
+	TCC 55 55
+	ErrCoreIdVal 56 56
+	PCC 57 57
+	AddrV 58 58
+	MiscV 59 59
+	En 60 60
+	UC 61 61
+	Overflow 62 62
+	Val 63 63
+mmUMCCH0_0_EccErrCnt 0 0x361 1 0 0
+	EccErrCnt 0 15
+mmUMCCH0_0_EccErrCntSel 0 0x360 3 0 0
+	EccErrCntCsSel 0 3
+	EccErrInt 12 13
+	EccErrCntEn 15 15

@@ -1,0 +1,9 @@
+mullins null 1 8 2 1
+uvd420 null 0 ip/uvd_4_2_0.reg
+vce200 null 0 ip/vce_2_0_0.reg
+gmc700 null 0 ip/gmc_7_0_0.reg
+dce800 null 0 ip/dce_8_0_0.reg
+gfx720 null 0 ip/gfx_7_2_0.reg
+smu700 null 0 ip/smu_7_0_0.reg
+oss200 null 0 ip/oss_2_0_0.reg
+bif410 null 0 ip/bif_4_1_0.reg

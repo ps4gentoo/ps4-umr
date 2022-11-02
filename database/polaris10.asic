@@ -1,0 +1,9 @@
+polaris10 null 2 8 2 0
+uvd600 null 0 ip/uvd_6_0_0.reg
+vce300 null 0 ip/vce_3_0_0.reg
+gmc810 null 0 ip/gmc_8_1_0.reg
+dce1120 null 0 ip/dce_11_2_0.reg
+gfx800 null 0 ip/gfx_8_0_0.reg
+smu713 null 0 ip/smu_7_1_3.reg
+oss300 null 0 ip/oss_3_0_0.reg
+bif510 null 0 ip/bif_5_1_0.reg

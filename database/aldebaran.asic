@@ -1,0 +1,13 @@
+aldebaran aldebaran.soc15 3 12 3 0
+vcn260 VCN 0 ip/vcn_2_6_0.reg
+umc670 UMC  0 ip/umc_6_7_0.reg
+sdma0440 SDMA0 0 ip/sdma_4_4_0.reg
+sdma1440 SDMA1 0 ip/sdma_4_4_0.reg
+sdma2440 SDMA1 1 ip/sdma_4_4_0.reg
+sdma3440 SDMA1 2 ip/sdma_4_4_0.reg
+sdma4440 SDMA1 3 ip/sdma_4_4_0.reg
+smuio1302 SMUIO 0 ip/smuio_13_0_2.reg
+mp1302 MP0 0 ip/mp_13_0_2.reg
+mmhub170 MMHUB 0 ip/mmhub_1_7_0.reg
+gfx942 GC 0 ip/gc_9_4_2.reg
+nbio740 NBIO 0 ip/nbio_7_4_0.reg

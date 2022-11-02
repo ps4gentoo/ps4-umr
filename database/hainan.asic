@@ -1,0 +1,6 @@
+hainan null 0 5 2 0
+gmc600 null 0 ip/gmc_6_0_0.reg
+gfx600 null 0 ip/gfx_6_0_0.reg
+oss100 null 0 ip/oss_1_0_0.reg
+smu600 null 0 ip/smu_6_0_0.reg
+bif300 null 0 ip/bif_3_0_0.reg
