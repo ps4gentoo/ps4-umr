@@ -20,6 +20,10 @@
 0x131B kaveri.asic
 0x131C kaveri.asic
 0x131D kaveri.asic
+0x9920 liverpool.asic
+0x9922 liverpool.asic
+0x9923 liverpool.asic
+0x9924 gladius.asic
 0x13FE cyan_skillfish.asic
 0x143F cyan_skillfish.asic
 0x15D8 picasso.asic
