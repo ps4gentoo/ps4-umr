@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -76,7 +76,7 @@ static void sigint_handler(int n)
 {
 	(void)n;
 	printf("Profiler killed\n");
-	umr_sq_cmd_halt_waves(kill_asic, UMR_SQ_CMD_RESUME);
+	umr_sq_cmd_halt_waves(kill_asic, UMR_SQ_CMD_RESUME, 0);
 	exit(EXIT_FAILURE);
 }
 
@@ -87,7 +87,7 @@ void umr_profiler(struct umr_asic *asic, int samples, int shader_target)
 	struct umr_profiler_shaders *shaders;
 	struct umr_profiler_text *texts, *otext;
 	struct umr_wave_data *owd, *wd;
-	struct umr_pm4_stream *stream;
+	struct umr_packet_stream *stream;
 	struct umr_shaders_pgm *shader;
 	unsigned nitems, nmax, nshaders, x, y, z, found;
 	char *ringname;
@@ -102,23 +102,30 @@ void umr_profiler(struct umr_asic *asic, int samples, int shader_target)
 
 	nmax = samples;
 	nitems = 0;
-	ophit = phit = calloc(nmax, sizeof *phit);
-
+	phit = calloc(nmax, sizeof *phit);
 	otext = texts = calloc(1, sizeof *texts);
+
+	if (!phit || !texts) {
+		free(phit);
+		free(texts);
+		asic->err_msg("[ERROR]: Out of memory\n");
+		return;
+	}
 
 	ringname = asic->options.ring_name[0] ? asic->options.ring_name : "gfx";
 	gprs = asic->options.skip_gprs;
 
 	while (samples--) {
+		int start = -1, stop = -1;
 		fprintf(stderr, "%5u samples left\r", samples);
 		fflush(stderr);
 		wd = NULL;
 		do {
-			umr_sq_cmd_halt_waves(asic, UMR_SQ_CMD_RESUME);
-			umr_sq_cmd_halt_waves(asic, UMR_SQ_CMD_HALT);
+			umr_sq_cmd_halt_waves(asic, UMR_SQ_CMD_RESUME, 0);
+			umr_sq_cmd_halt_waves(asic, UMR_SQ_CMD_HALT, 0);
 
 			// release waves (if any) if the ring isn't halted
-			if (umr_pm4_decode_ring_is_halted(asic, ringname) == 0)
+			if (umr_ring_is_halted(asic, ringname) == 0)
 				continue;
 
 			asic->options.skip_gprs = 1;
@@ -131,20 +138,22 @@ void umr_profiler(struct umr_asic *asic, int samples, int shader_target)
 		// processor is also halted so we can grab the
 		// stream.  This isn't 100% though it seems so race
 		// conditions might occur.
-		stream = umr_pm4_decode_ring(asic, ringname, 1, -1, -1);
+		stream = umr_packet_decode_ring(asic, NULL, ringname, 0, &start, &stop, UMR_RING_GUESS);
 
 		// loop through data ...
 		sample_hit = 0;
 		while (wd) {
-			phit[nitems].vmid = (asic->family < FAMILY_NV) ? wd->ws.hw_id.vm_id : wd->ws.hw_id2.vm_id;
-			phit[nitems].pc = ((uint64_t)wd->ws.pc_hi << 32) | wd->ws.pc_lo;
-			phit[nitems].inst_dw0 = wd->ws.wave_inst_dw0;
-			phit[nitems].inst_dw1 = wd->ws.wave_inst_dw1;
+			uint32_t w_vmid;
+			uint64_t w_pc;
+
+			umr_wave_data_get_shader_pc_vmid(asic, wd, &w_vmid, &w_pc);
+			phit[nitems].vmid = w_vmid;
+			phit[nitems].pc = w_pc;
 
 			// try to find shader in PM4 stream
 			shader = NULL;
 			if (stream)
-				shader = umr_find_shader_in_stream(stream, phit[nitems].vmid, phit[nitems].pc);
+				shader = umr_packet_find_shader(stream, phit[nitems].vmid, phit[nitems].pc);
 			if (shader) {
 				struct umr_profiler_text *shader_text;
 
@@ -174,7 +183,7 @@ void umr_profiler(struct umr_asic *asic, int samples, int shader_target)
 				if (!shader_text) {
 					void *data = calloc(1, shader->size);
 					if (umr_read_vram(asic, asic->options.vm_partition, shader->vmid, shader->addr, shader->size, data) < 0) {
-						fprintf(stderr, "[ERROR]: Could not read shader text at address %u:0x%llx\n", (unsigned)shader->vmid, (unsigned long long)shader->addr);
+						fprintf(stderr, "[ERROR]: Could not read shader text at address 0x%"PRIx32":0x%llx\n", shader->vmid, (unsigned long long)shader->addr);
 						free(data);
 					} else {
 						texts->next = calloc(1, sizeof *texts);
@@ -228,14 +237,14 @@ throw_back:
 			++samples;
 
 		if (stream)
-			umr_free_pm4_stream(stream);
+			umr_packet_free(stream);
 	}
 
 	// we're done scanning so resume the waves
 	// at this point the jobs could in theory be terminated
 	// and the shaders unmapped which is why we captured
 	// them in the 'texts' list
-	umr_sq_cmd_halt_waves(asic, UMR_SQ_CMD_RESUME);
+	umr_sq_cmd_halt_waves(asic, UMR_SQ_CMD_RESUME, 0);
 	signal(SIGINT, NULL);
 
 	// sort all hits by address/size/etc so we can
@@ -300,7 +309,7 @@ throw_back:
 			if (!texts)
 				continue;
 
-			printf("\n\nShader %u@0x%llx (%lu bytes, type: %s): total hits: %lu\n",
+			printf("\n\nShader 0x%"PRIx32"@0x%llx (%lu bytes, type: %s): total hits: %lu\n",
 				shaders[x].hits[0].data.vmid,
 				(unsigned long long)shaders[x].hits[0].data.base_addr,
 				(unsigned long)shaders[x].hits[0].data.shader_size,
@@ -312,58 +321,66 @@ throw_back:
 			// disasm shader
 			strs = NULL;
 			data = texts->text;
-			umr_shader_disasm(asic, (uint8_t *)data, texts->size, 0xFFFFFFFF, &strs);
 
-			for (z = 0; z < shaders[x].hits[0].data.shader_size; z += 4) {
-				unsigned cnt=0, pct;
+			if (data) {
+				umr_shader_disasm(asic, (uint8_t *)data, texts->size, 0xFFFFFFFF, &strs);
 
-				// find this offset in the hits so we know the hit count
-				for (y = 0; y < shaders[x].nhits; y++) {
-					if (shaders[x].hits[y].data.pc == (shaders[x].hits[0].data.base_addr + z)) {
-						cnt = shaders[x].hits[y].cnt;
-						break;
+				for (z = 0; z < shaders[x].hits[0].data.shader_size; z += 4) {
+					unsigned cnt=0, pct;
+
+					// find this offset in the hits so we know the hit count
+					for (y = 0; y < shaders[x].nhits; y++) {
+						if (shaders[x].hits[y].data.pc == (shaders[x].hits[0].data.base_addr + z)) {
+							cnt = shaders[x].hits[y].cnt;
+							break;
+						}
 					}
+
+					// compute percentage for this address and then
+					// colour code the line
+					pct = (1000 * cnt) / shaders[x].total_cnt;
+					if (pct >= 300)
+						printf(RED);
+					else if (pct >= 200)
+						printf(YELLOW);
+					else if (pct >= 100)
+						printf(GREEN);
+
+					printf("\tshader[0x%llx + 0x%04llx] = 0x%08lx %-60s ",
+						(unsigned long long)shaders[x].hits[0].data.base_addr,
+						(unsigned long long)z,
+						(unsigned long)data[z/4],
+						strs[z/4]);
+					free(strs[z/4]);
+
+					if (cnt)
+						printf("(%5u hits, %3u.%01u %%)", cnt, pct/10, pct%10);
+					sum += cnt;
+
+					printf("\n%s", RST);
 				}
-
-				// compute percentage for this address and then
-				// colour code the line
-				pct = (1000 * cnt) / shaders[x].total_cnt;
-				if (pct >= 300)
-					printf(RED);
-				else if (pct >= 200)
-					printf(YELLOW);
-				else if (pct >= 100)
-					printf(GREEN);
-
-				printf("\tshader[0x%llx + 0x%04llx] = 0x%08lx %-60s ",
-					(unsigned long long)shaders[x].hits[0].data.base_addr,
-					(unsigned long long)z,
-					(unsigned long)data[z/4],
-					strs[z/4]);
-				free(strs[z/4]);
-
-				if (cnt)
-					printf("(%5u hits, %3u.%01u %%)", cnt, pct/10, pct%10);
-				sum += cnt;
-
-				printf("\n%s", RST);
+				if (sum != shaders[x].total_cnt)
+					printf("Sum mismatch: %lu != %lu\n", (unsigned long)sum, (unsigned long)shaders[x].total_cnt);
+				free(strs);
 			}
-			if (sum != shaders[x].total_cnt)
-				printf("Sum mismatch: %lu != %lu\n", (unsigned long)sum, (unsigned long)shaders[x].total_cnt);
-			free(strs);
 		}
 	}
 	total_hits = total_hits_by_type[0] + total_hits_by_type[1] +
 				 total_hits_by_type[2] + total_hits_by_type[3] +
 				 total_hits_by_type[4] + total_hits_by_type[5] +
 				 total_hits_by_type[6];
-	printf("\nPixel Shaders:   %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_PIXEL]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_PIXEL]) / total_hits) % 10);
-	printf("Vertex Shaders:  %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_VERTEX]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_VERTEX]) / total_hits) % 10);
-	printf("Compute Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_COMPUTE]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_COMPUTE]) / total_hits) % 10);
-	printf("HS Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_HS]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_HS]) / total_hits) % 10);
-	printf("GS Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_GS]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_GS]) / total_hits) % 10);
-	printf("ES Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_ES]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_ES]) / total_hits) % 10);
-	printf("LS Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_LS]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_LS]) / total_hits) % 10);
+
+	if (!total_hits) {
+		printf("No hits.\n");
+	} else {
+		printf("\nPixel Shaders:   %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_PIXEL]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_PIXEL]) / total_hits) % 10);
+		printf("Vertex Shaders:  %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_VERTEX]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_VERTEX]) / total_hits) % 10);
+		printf("Compute Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_COMPUTE]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_COMPUTE]) / total_hits) % 10);
+		printf("HS Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_HS]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_HS]) / total_hits) % 10);
+		printf("GS Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_GS]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_GS]) / total_hits) % 10);
+		printf("ES Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_ES]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_ES]) / total_hits) % 10);
+		printf("LS Shaders: %3u.%01u %%\n", ((1000 * total_hits_by_type[UMR_SHADER_LS]) / total_hits) / 10, ((1000 * total_hits_by_type[UMR_SHADER_LS]) / total_hits) % 10);
+	}
 
 	texts = otext;
 	while (texts) {

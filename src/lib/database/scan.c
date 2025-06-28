@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -55,7 +55,13 @@ static int umr_do_scan(struct umr_database_scan_item *it, char *path)
 			strcpy(it->path, path);
 			strcpy(it->fname, di->d_name);
 			if (sscanf(di->d_name, "%[a-z0-9]_%d_%d_%d.reg", it->ipname, &it->maj, &it->min, &it->rev) != 4) {
-				fprintf(stderr, "[WARNING]: Invalid reg file name %s\n", di->d_name);
+				char tmpbuf[128];
+				if (sscanf(di->d_name, "%[a-z0-9]_%[a-z0-9]_%d_%d_%d.reg", it->ipname, tmpbuf, &it->maj, &it->min, &it->rev) != 5) {
+					fprintf(stderr, "[WARNING]: Invalid reg file name %s\n", di->d_name);
+				} else {
+					strcat(it->ipname, "_");
+					strcat(it->ipname, tmpbuf);
+				}
 			}
 			it->next = calloc(1, sizeof *it);
 			if (!it->next) {
@@ -70,6 +76,22 @@ static int umr_do_scan(struct umr_database_scan_item *it, char *path)
 	return 0;
 }
 
+/**
+ * @brief Scans directories for register files and populates a database scan item list.
+ *
+ * This function scans specified directories for files with the ".reg" extension,
+ * which are expected to contain register definitions. It starts by scanning the provided
+ * path, then checks the environment variable `UMR_DATABASE_PATH`, followed by any
+ * predefined directory (if defined), and finally a default source directory.
+ *
+ * For each valid ".reg" file found, it creates an entry in a linked list of type
+ * `umr_database_scan_item` containing details such as the file path, name, IP name,
+ * major, minor, and revision numbers.
+ *
+ * @param path The initial directory path to start scanning. If NULL or empty, the function
+ *             will attempt to use other sources specified by environment variables and defaults.
+ * @return A pointer to the head of the linked list containing scan items, or NULL if an error occurs.
+ */
 struct umr_database_scan_item *umr_database_scan(char *path)
 {
 	int r;

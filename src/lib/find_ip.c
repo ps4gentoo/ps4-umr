@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,14 +24,25 @@
  */
 #include "umr.h"
 
+/**
+ * umr_find_ip_block - Find an IP block given a name and optional instance
+ *
+ * @asic: The ASIC to search for the IP block
+ * @ipname: The IP name to partial match
+ * @instance: The instance of the IP block to match (or <0 for don't care)
+ *
+ * Returns NULL if not found.
+ */
 struct umr_ip_block *umr_find_ip_block(const struct umr_asic *asic, const char *ipname, int instance)
 {
 	int x;
 
 	for (x = 0; x < asic->no_blocks; x++) {
 		if (!memcmp(asic->blocks[x]->ipname, ipname, strlen(ipname))) {
-			if (instance < 0 || (instance >= 0 && asic->blocks[x]->discoverable.instance == instance))
-				return asic->blocks[x];
+                  if (instance < 0 ||
+                      (instance >= 0 &&
+                       asic->blocks[x]->discoverable.logical_inst == instance))
+                    return asic->blocks[x];
 		}
 	}
 	return NULL;

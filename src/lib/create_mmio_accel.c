@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -60,7 +60,7 @@ int umr_create_mmio_accel(struct umr_asic *asic)
 		}
 	}
 
-	asic->mmio_accel = calloc(sizeof asic->mmio_accel[0], no_regs);
+	asic->mmio_accel = calloc(no_regs, sizeof asic->mmio_accel[0]);
 	asic->mmio_accel_size = no_regs;
 	if (!asic->mmio_accel) {
 		asic->err_msg("[ERROR]: Out of memory\n");

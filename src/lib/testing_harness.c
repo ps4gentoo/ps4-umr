@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -189,7 +189,7 @@ static uint32_t *consume_words(const char **ptr, uint32_t *size)
 		return NULL;
 	}
 
-	p = calloc(sizeof(p[0]), s);
+	p = calloc(s, sizeof(p[0]));
 	if (!p) {
 		fprintf(stderr, "[ERROR]: Out of memory\n");
 		*size = 0;
@@ -253,11 +253,16 @@ static int expect_word(const char **ptr, char *token)
 	return r;
 }
 
+/**
+ * umr_free_test_harness - Free a created test harness
+ *
+ * @th: The test harness to free
+ */
 void umr_free_test_harness(struct umr_test_harness *th)
 {
-	struct umr_ram_blocks *sram, *vram, *config, *discovery;
-	struct umr_mmio_blocks *mmio, *vgpr, *sgpr, *wave, *ring;
-	struct umr_sq_blocks *sq;
+	struct umr_test_harness_ram_blocks *sram, *vram, *config, *discovery;
+	struct umr_test_harness_mmio_blocks *mmio, *vgpr, *sgpr, *wave, *ring;
+	struct umr_test_harness_sq_blocks *sq;
 	void *t;
 
 	if (!th)
@@ -357,12 +362,20 @@ void umr_free_test_harness(struct umr_test_harness *th)
 	free(th);
 }
 
+/**
+ * umr_create_test_harness - Create a UMR test harness from a script
+ *
+ * @script: The text script file contents that contains the harness data
+ *
+ * Returns a pointer to a umr_test_harness which can be attached to
+ * a UMR asic.
+ */
 struct umr_test_harness *umr_create_test_harness(const char *script)
 {
 	struct umr_test_harness *th;
-	struct umr_ram_blocks *sram, *vram, *config, *discovery;
-	struct umr_mmio_blocks *mmio, *vgpr, *sgpr, *wave, *ring;
-	struct umr_sq_blocks *sq;
+	struct umr_test_harness_ram_blocks *sram, *vram, *config, *discovery;
+	struct umr_test_harness_mmio_blocks *mmio, *vgpr, *sgpr, *wave, *ring;
+	struct umr_test_harness_sq_blocks *sq;
 	int r;
 
 	th = calloc(1, sizeof *th);
@@ -498,6 +511,13 @@ error:
 	return NULL;
 }
 
+/**
+ * umr_create_test_harness_file - Create a test harness from a file on disk
+ *
+ * @fname: The name of the file on disk
+ *
+ * Returns a parsed umr_test_harness structure.
+ */
 struct umr_test_harness *umr_create_test_harness_file(const char *fname)
 {
 	const char *script;
@@ -520,7 +540,7 @@ struct umr_test_harness *umr_create_test_harness_file(const char *fname)
 static int access_sram(struct umr_asic *asic, uint64_t address, uint32_t size, void *dst, int write_en)
 {
 	struct umr_test_harness *th = asic->mem_funcs.data;
-	struct umr_ram_blocks *rb = &th->sysram;
+	struct umr_test_harness_ram_blocks *rb = &th->sysram;
 
 	// try to find first block that covers the range
 	while (rb) {
@@ -541,7 +561,7 @@ static int access_sram(struct umr_asic *asic, uint64_t address, uint32_t size, v
 static int access_linear_vram(struct umr_asic *asic, uint64_t address, uint32_t size, void *data, int write_en)
 {
 	struct umr_test_harness *th = asic->mem_funcs.data;
-	struct umr_ram_blocks *rb = &th->vram;
+	struct umr_test_harness_ram_blocks *rb = &th->vram;
 
 	// try to find first block that covers the range
 	while (rb) {
@@ -568,8 +588,8 @@ static uint64_t gpu_bus_to_cpu_address(struct umr_asic *asic, uint64_t dma_addr)
 static uint32_t read_reg(struct umr_asic *asic, uint64_t addr, enum regclass type)
 {
 	struct umr_test_harness *th = asic->reg_funcs.data;
-	struct umr_sq_blocks *sq;
-	struct umr_mmio_blocks *mm;
+	struct umr_test_harness_sq_blocks *sq;
+	struct umr_test_harness_mmio_blocks *mm;
 	uint32_t v;
 	uint64_t qaddr;
 
@@ -638,7 +658,7 @@ static uint32_t read_reg(struct umr_asic *asic, uint64_t addr, enum regclass typ
 static int write_reg(struct umr_asic *asic, uint64_t addr, uint32_t value, enum regclass type)
 {
 	struct umr_test_harness *th = asic->reg_funcs.data;
-	struct umr_mmio_blocks *mm;
+	struct umr_test_harness_mmio_blocks *mm;
 	uint64_t qaddr;
 
 	// 'addr' is a byte address of the register but the database
@@ -693,52 +713,43 @@ static int write_reg(struct umr_asic *asic, uint64_t addr, uint32_t value, enum 
 	}
 }
 
-static int read_sgprs(struct umr_asic *asic, struct umr_wave_status *ws, uint32_t *dst)
+static int read_sgprs(struct umr_asic *asic, struct umr_wave_data *wd, uint32_t *dst)
 {
-	uint64_t addr, shift, nr, x;
+	uint64_t addr, nr, x;
 	struct umr_test_harness *th = asic->reg_funcs.data;
-	struct umr_mmio_blocks *mm;
+	struct umr_test_harness_mmio_blocks *mm;
 
 	if (asic->family >= FAMILY_NV) {
-		addr =
-			(1ULL << 60)                             | // reading SGPRs
-			((uint64_t)0)                            | // starting address to read from
-			((uint64_t)ws->hw_id1.se_id << 12)       |
-			((uint64_t)ws->hw_id1.sa_id << 20)       |
-			((uint64_t)((ws->hw_id1.wgp_id << 2) | ws->hw_id1.simd_id) << 28)  |
-			((uint64_t)ws->hw_id1.wave_id << 36)     |
-			(0ULL << 52); // thread_id
+		addr =  (1ULL << 60) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SE_ID") << 12) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SA_ID") << 20) |
+				((((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "WGP_ID") << 2) |
+				  (uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SIMD_ID")) << 28) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "WAVE_ID") << 36);
 
-		nr = 112;
+		nr = umr_wave_data_num_of_sgprs(asic, wd);
+	} else if (asic->family < FAMILY_NV) {
+		addr =  (1ULL << 60) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SE_ID") << 12) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SH_ID") << 20) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "CU_ID") << 28) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "WAVE_ID") << 36) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SIMD_ID") << 44);
+		nr = umr_wave_data_num_of_sgprs(asic, wd);
 	} else {
-		if (asic->family <= FAMILY_CIK)
-			shift = 3;  // on SI..CIK allocations were done in 8-dword blocks
-		else
-			shift = 4;  // on VI allocations are in 16-dword blocks
-
-		addr =
-			(1ULL << 60)                             | // reading SGPRs
-			((uint64_t)0)                            | // starting address to read from
-			((uint64_t)ws->hw_id.se_id << 12)        |
-			((uint64_t)ws->hw_id.sh_id << 20)        |
-			((uint64_t)ws->hw_id.cu_id << 28)        |
-			((uint64_t)ws->hw_id.wave_id << 36)      |
-			((uint64_t)ws->hw_id.simd_id << 44)      |
-			(0ULL << 52); // thread_id
-
-		nr = (ws->gpr_alloc.sgpr_size + 1) << shift;
+		return -1;
 	}
 
 	// grab upto 'nr' words into dst[0..nr-1]
-	for (x = 0; x < nr; x++) {
+	for (x = 0; x < nr; ) {
 		// read from SGPR list
 		mm = &th->sgpr;
 		while (mm) {
 			/* because of how reading GPRs is done there could be more than
 			 * one vector entry for this given GPR address so we stop reading
 			 * from a given link when it's been exhausted */
-			if (mm->mmio_address == addr && mm->cur_slot < mm->no_values) {
-				dst[x] = mm->values[mm->cur_slot];
+			while (x < nr && mm->mmio_address == addr && mm->cur_slot < mm->no_values) {
+				dst[x++] = mm->values[mm->cur_slot];
 				++(mm->cur_slot);
 			}
 			mm = mm->next;
@@ -746,14 +757,15 @@ static int read_sgprs(struct umr_asic *asic, struct umr_wave_status *ws, uint32_
 	}
 
 	// read trap if any
-	if (ws->wave_status.trap_en || ws->wave_status.priv) {
+	if (umr_wave_data_get_flag_trap_en(asic, wd) || umr_wave_data_get_flag_priv(asic, wd)) {
+		nr = 16;
 		addr += 4 * 0x6C;  // byte offset, kernel adds 0x200 to address
-		for (x = 0; x < nr; x++) {
-			// read from VGPR list
+		for (x = 0; x < nr;) {
+			// read from TRAP list
 			mm = &th->sgpr;
 			while (mm) {
-				if (mm->mmio_address == addr && mm->cur_slot < mm->no_values) {
-					dst[0x6C + x] = mm->values[mm->cur_slot];
+				while (x < nr && mm->mmio_address == addr && mm->cur_slot < mm->no_values) {
+					dst[0x6C + x++] = mm->values[mm->cur_slot];
 					++(mm->cur_slot);
 				}
 				mm = mm->next;
@@ -763,10 +775,10 @@ static int read_sgprs(struct umr_asic *asic, struct umr_wave_status *ws, uint32_
 	return 0;
 }
 
-static int read_vgprs(struct umr_asic *asic, struct umr_wave_status *ws, uint32_t thread, uint32_t *dst)
+static int read_vgprs(struct umr_asic *asic, struct umr_wave_data *wd, uint32_t thread, uint32_t *dst)
 {
 	struct umr_test_harness *th = asic->reg_funcs.data;
-	struct umr_mmio_blocks *mm;
+	struct umr_test_harness_mmio_blocks *mm;
 	uint64_t addr, nr, x;
 	unsigned granularity = asic->parameters.vgpr_granularity; // default is blocks of 4 registers
 
@@ -774,44 +786,48 @@ static int read_vgprs(struct umr_asic *asic, struct umr_wave_status *ws, uint32_
 	if (asic->family < FAMILY_AI)
 		return -1;
 
+
 	if (asic->family >= FAMILY_NV) {
-		addr =
-			(0ULL << 60)                             | // reading VGPRs
-			((uint64_t)0)                            | // starting address to read from
-			((uint64_t)ws->hw_id1.se_id << 12)        |
-			((uint64_t)ws->hw_id1.sa_id << 20)        |
-			((uint64_t)((ws->hw_id1.wgp_id << 2) | ws->hw_id1.simd_id) << 28)  |
-			((uint64_t)ws->hw_id1.wave_id << 36)      |
-			((uint64_t)thread << 52);
+		addr =  (0ULL << 60) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SE_ID") << 12) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SA_ID") << 20) |
+				((((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "WGP_ID") << 2) |
+				  (uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SIMD_ID")) << 28) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "WAVE_ID") << 36) |
+				((uint64_t)thread << 52);
 
-		nr = (ws->gpr_alloc.vgpr_size + 1) << granularity;
+		nr = (umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_GPR_ALLOC", "VGPR_SIZE") + 1) << granularity;
+	} else if (asic->family < FAMILY_NV) {
+		addr =  (0ULL << 60) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SE_ID") << 12) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SH_ID") << 20) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "CU_ID") << 28) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "WAVE_ID") << 36) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SIMD_ID") << 44) |
+				((uint64_t)thread << 52);
+		nr = (umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_GPR_ALLOC", "VGPR_SIZE") + 1) << granularity;
 	} else {
-		addr =
-			(0ULL << 60)                             | // reading VGPRs
-			((uint64_t)0)                            | // starting address to read from
-			((uint64_t)ws->hw_id.se_id << 12)        |
-			((uint64_t)ws->hw_id.sh_id << 20)        |
-			((uint64_t)ws->hw_id.cu_id << 28)        |
-			((uint64_t)ws->hw_id.wave_id << 36)      |
-			((uint64_t)ws->hw_id.simd_id << 44)      |
-			((uint64_t)thread << 52);
-
-		nr = (ws->gpr_alloc.vgpr_size + 1) << granularity;
+		return -1;
 	}
 
 	// grab upto 'nr' words into dst[0..nr-1]
-	for (x = 0; x < nr; x++) {
+	for (x = 0; x < nr;) {
 		// read from VGPR list
 		mm = &th->vgpr;
 		while (mm) {
 			/* because of how reading GPRs is done there could be more than
 			 * one vector entry for this given GPR address so we stop reading
 			 * from a given link when it's been exhausted */
-			if (mm->mmio_address == addr && mm->cur_slot < mm->no_values) {
-				dst[x] = mm->values[mm->cur_slot];
+			while (x < nr && mm->mmio_address == addr && mm->cur_slot < mm->no_values) {
+				dst[x++] = mm->values[mm->cur_slot];
 				++(mm->cur_slot);
 			}
 			mm = mm->next;
+		}
+		// because reads are all or nothing if x < nr then we failed
+		if (x < nr) {
+			asic->err_msg("[BUG]: Still have %d words left to read for VGPR buffer\n", nr - x);
+			return -1;
 		}
 	}
 	return 0;
@@ -820,7 +836,7 @@ static int read_vgprs(struct umr_asic *asic, struct umr_wave_status *ws, uint32_
 static int wave_status(struct umr_asic *asic, unsigned se, unsigned sh, unsigned cu, unsigned simd, unsigned wave, struct umr_wave_status *ws)
 {
 	struct umr_test_harness *th = asic->reg_funcs.data;
-	struct umr_mmio_blocks *mm;
+	struct umr_test_harness_mmio_blocks *mm;
 	uint64_t addr, x;
 	uint32_t buf[32];
 
@@ -834,7 +850,7 @@ static int wave_status(struct umr_asic *asic, unsigned se, unsigned sh, unsigned
 		((uint64_t)simd << 37);
 
 	// find the first unused slot and then read all of the contents
-	mm = &th->vgpr;
+	mm = &th->wave;
 	x = 0;
 	while (mm) {
 		if (mm->mmio_address == addr && mm->cur_slot == 0) {
@@ -848,11 +864,19 @@ static int wave_status(struct umr_asic *asic, unsigned se, unsigned sh, unsigned
 	}
 
 	if (x)
-		return umr_parse_wave_data_gfx(asic, ws, buf);
+		return umr_parse_wave_data_gfx(asic, ws, buf, x);
 	else
 		return -1;
 }
 
+/**
+ * umr_test_harness_get_config_data - Copy the GC config data from the harness
+ *
+ * @asic: The ASIC the test harness is already applied to
+ * @dst: Where to copy the array out to
+ *
+ * Returns the number of bytes copied.
+ */
 int umr_test_harness_get_config_data(struct umr_asic *asic, uint8_t *dst)
 {
 	int x;
@@ -864,7 +888,14 @@ int umr_test_harness_get_config_data(struct umr_asic *asic, uint8_t *dst)
 	return x;
 }
 
-
+/**
+ * umr_test_harness_get_ring_data - Get the contents of a ring stored in the harness
+ *
+ * @asic: The ASIC the test harness is attached to
+ * @ringsize: Where to store the size of the ring data
+ *
+ * Returns a pointer to the allocated array containing the ring data.  Can be freed with free().
+ */
 void *umr_test_harness_get_ring_data(struct umr_asic *asic, uint32_t *ringsize)
 {
 	uint32_t x, *rd;
@@ -878,6 +909,12 @@ void *umr_test_harness_get_ring_data(struct umr_asic *asic, uint32_t *ringsize)
 	return rd;
 }
 
+/**
+ * umr_attach_test_harness - Attach a test harness to an existing ASIC structure including callbacks.
+ *
+ * @th: The test harness to attach.
+ * @asic: The ASIC to attach it to.  Also re-writes the callbacks for HW access.
+ */
 void umr_attach_test_harness(struct umr_test_harness *th, struct umr_asic *asic)
 {
 	asic->mem_funcs.access_linear_vram = access_linear_vram;
@@ -894,6 +931,31 @@ void umr_attach_test_harness(struct umr_test_harness *th, struct umr_asic *asic)
 	asic->gpr_read_funcs.read_vgprs = read_vgprs;
 
 	asic->wave_funcs.get_wave_status = wave_status;
+	asic->wave_funcs.get_wave_sq_info = umr_get_wave_sq_info;
+	asic->ring_func.read_ring_data = umr_read_ring_data;
+
+	asic->shader_disasm_funcs.disasm = umr_shader_disasm;
+
+	if (asic->options.vgpr_granularity >= 0)
+		asic->parameters.vgpr_granularity = asic->options.vgpr_granularity;
 
 	th->asic = asic;
+
+	umr_scan_config(asic, 0);
+
+	// default shader options
+	if (asic->family <= FAMILY_VI) { // on gfx9+ hs/gs are opaque
+		asic->options.shader_enable.enable_gs_shader = 1;
+		asic->options.shader_enable.enable_hs_shader = 1;
+	}
+	asic->options.shader_enable.enable_vs_shader   = 1;
+	asic->options.shader_enable.enable_ps_shader   = 1;
+	asic->options.shader_enable.enable_es_shader   = 1;
+	asic->options.shader_enable.enable_ls_shader   = 1;
+	asic->options.shader_enable.enable_comp_shader = 1;
+
+	if (asic->family > FAMILY_VI)
+		asic->options.shader_enable.enable_es_ls_swap = 1;  // on >FAMILY_VI we swap LS/ES for HS/GS
+
+	umr_create_mmio_accel(asic);
 }

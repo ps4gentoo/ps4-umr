@@ -1,5 +1,5 @@
 dgpu_pwm: main.o
-	${CC} main.o -lumrcore -lumrlow -lumrcore -lumrlow -lumrcore -lpciaccess -o dgpu_pwm
+	${CC} ${CFLAGS} main.o -lumrcore -lumrlow -lumrcore -lumrlow -lumrcore -lpciaccess -o dgpu_pwm
 
 .PHONY: clean
 clean:

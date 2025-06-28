@@ -1,0 +1,8 @@
+2
+regUMCCH0_GeccErrCnt 0 0x329 2 0 0
+	GeccErrCnt 0 15
+	GeccUnCorrErrCnt 16 31
+regUMCCH0_GeccErrCntSel 0 0x328 3 0 0
+	GeccErrInt 12 13
+	GeccErrCntEn 15 15
+	PoisonCntEn 16 17

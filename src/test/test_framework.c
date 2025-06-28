@@ -70,6 +70,8 @@ static enum TEST_RESULT run_test(struct global_config* global_config, struct tes
 
     memset(&options, 0, sizeof(options));
     options.verbose = global_config->verbose;
+    options.is_virtual = 1;
+    options.force_asic_file = 1;
     asic = umr_discover_asic_by_name(&options, test_config->asic_name, vm_printf);
     asic->options.verbose = global_config->verbose;
     asic->std_msg = vm_printf;
@@ -110,4 +112,9 @@ void run_tests(struct global_config* global_config)
     }
 
     printf("---\n%d Passed. %d Failed\n", success, fail);
+    if (fail) {
+	exit(EXIT_FAILURE);
+    } else {
+	exit(EXIT_SUCCESS);
+    }
 }

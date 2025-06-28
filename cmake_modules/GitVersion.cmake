@@ -41,13 +41,6 @@
 ###############################################################################
 
 # Try to find version by looking at git tags
-#
-# Once done, this will define
-#
-# LIBDRM_FOUND
-# LIBDRM_INCLUDE_DIR
-# LIBDRM_LIBRARIES
-
 
 # Parses the VERSION_STRING variable and places
 # the first, second and third number values in
@@ -137,9 +130,9 @@ function(get_version_from_tag DEFAULT_VERSION_STRING)
         "${VERSION_MINOR}"
         PARENT_SCOPE)
     set(VERSION_REV
-        "${VERSION_REV}"
+        "${GIT_TAG_STRING}"
         PARENT_SCOPE)
     set(VERSION_BRANCH
-        "${VERSION_BRANCH}"
+        "${GIT_BRANCH}"
         PARENT_SCOPE)
 endfunction()

@@ -1,0 +1,1 @@
+-f navi10 -RS vcn_unified_0 --test-harness test/kat/vcn_dec_ib_test1.txt

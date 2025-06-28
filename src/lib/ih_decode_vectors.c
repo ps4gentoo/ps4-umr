@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,10 +29,10 @@
 
 /** umr_ih_decode_vectors - Decode a series of interrupt vectors
  *
- * asic: The device the vectors came from
- * ui: Callback structure to handle the decoded data
- * ih_data: The vector data
- * length: Length of vector data in bytes (must be multiple of vector size)
+ * @asic: The device the vectors came from
+ * @ui: Callback structure to handle the decoded data
+ * @ih_data: The vector data
+ * @length: Length of vector data in bytes (must be multiple of vector size)
  *
  * Returns the number of vectors processed.
  */
@@ -57,6 +57,7 @@ int umr_ih_decode_vectors(struct umr_asic *asic, struct umr_ih_decode_ui *ui, ui
 
 	case FAMILY_NV: // oss40/50
 	case FAMILY_AI:
+	case FAMILY_GFX11:
 		while (length) {
 			ui->start_vector(ui, off);
 			ui->add_field(ui, off + 0, "ClientID", BITS(ih_data[off + 0], 0, 8), NULL, 10); // TODO: add ID to name translation

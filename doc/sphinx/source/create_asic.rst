@@ -19,13 +19,13 @@ as follows:
 ::
 
 	struct umr_options {
-		int instance,
+		int forced_instance,
+			instance,
 			need_scan,
 			print,
 			bitfields,
 			bitfields_full,
 			empty_log,
-			follow,
 			use_bank,
 			many,
 			use_pci,
@@ -34,6 +34,7 @@ as follows:
 			quiet,
 			no_follow_ib,
 			no_follow_shader,
+			no_follow_loadx,
 			verbose,
 			halt_waves,
 			no_kernel,
@@ -42,11 +43,19 @@ as follows:
 			use_xgmi,
 			disasm_anyways,
 			skip_gprs,
-			no_scan_waves,
 			wave64,
 			full_shader,
 			context_reg_bank,
-			no_fold_vm_decode;
+			no_fold_vm_decode,
+			pg_lock,
+			test_log,
+			vm_partition,
+			is_virtual,
+			force_asic_file,
+			export_model,
+			vgpr_granularity,
+			use_v1_regs_debugfs,
+			trap_unsorted_db;
 
 		// hs/gs shaders can be opaque depending on circumstances on gfx9+ platforms
 		struct {
@@ -63,13 +72,13 @@ as follows:
 
 		union {
 			struct {
-				unsigned
+				uint32_t
 					instance,
 					se,
 					sh;
 			} grbm;
 			struct {
-				unsigned
+				uint32_t
 					me,
 					queue,
 					pipe,
@@ -83,6 +92,7 @@ as follows:
 			dev_name[64],
 			hub_name[32],
 			ring_name[32],
+			desired_path[256],
 			database_path[256];
 		struct {
 			unsigned domain,
@@ -91,6 +101,9 @@ as follows:
 				func;
 			char name[32];
 		} pci;
+
+		FILE *test_log_fd;
+		struct umr_test_harness *th;
 	};
 
 Where the following parameters are relevant to creating an ASIC instance:

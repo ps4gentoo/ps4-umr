@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -32,8 +32,18 @@
 #define DEBUG(...)
 #endif
 
-/** umr_vm_dma_to_phys -- Convert a GPU bound bus address to CPU physical */
- uint64_t umr_vm_dma_to_phys(struct umr_asic *asic, uint64_t dma_addr)
+/**
+ * @brief Convert a GPU bound bus address to CPU physical address.
+ *
+ * This function converts a DMA (Direct Memory Access) address from the GPU's perspective
+ * to a physical address on the CPU. It handles both older kernels with an iova debugfs file
+ * and newer kernels that use iomem directly.
+ *
+ * @param asic Pointer to the UMR ASIC structure containing device-specific information.
+ * @param dma_addr The DMA address to be converted.
+ * @return The corresponding physical address on the CPU, or 0 if conversion fails.
+ */
+uint64_t umr_vm_dma_to_phys(struct umr_asic *asic, uint64_t dma_addr)
 {
 	uint64_t phys;
 	if (asic->fd.iova >= 0) {
@@ -54,7 +64,19 @@
 }
 
 /**
- * umr_access_sram - Access system memory
+ * @brief Access system memory.
+ *
+ * This function reads from or writes to system memory at a specified physical address.
+ * It attempts to use the amdgpu_iomem debugfs entry if available, otherwise it tries
+ * to access /dev/fmem or /dev/mem directly.
+ *
+ * @param asic Pointer to the UMR ASIC structure containing device-specific information.
+ * @param address The physical system memory address to read from or write to.
+ * @param size The number of bytes to read or write.
+ * @param dst A pointer to a buffer where data will be stored if reading, or the source
+ *            buffer if writing.
+ * @param write_en Set to 0 for read operation, non-zero for write operation.
+ * @return 0 on success, -1 on failure.
  */
 int umr_access_sram(struct umr_asic *asic, uint64_t address, uint32_t size, void *dst, int write_en)
 {
@@ -118,7 +140,19 @@ retry:
 }
 
 /**
- * umr_access_linear_vram -- Access VRAM linearly without VM translation
+ * @brief Access VRAM linearly without VM translation.
+ *
+ * This function reads from or writes to Video RAM (VRAM) at a specified address
+ * without using virtual memory translation. It uses the file descriptor associated
+ * with VRAM in the UMR ASIC structure to perform the operation.
+ *
+ * @param asic Pointer to the UMR ASIC structure containing device-specific information.
+ * @param address The VRAM address to read from or write to.
+ * @param size The number of bytes to read or write.
+ * @param data A pointer to a buffer where data will be stored if reading, or the source
+ *             buffer if writing.
+ * @param write_en Set to 0 for read operation, non-zero for write operation.
+ * @return 0 on success, -1 on failure.
  */
 int umr_access_linear_vram(struct umr_asic *asic, uint64_t address, uint32_t size, void *data, int write_en)
 {

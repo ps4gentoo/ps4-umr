@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -315,7 +315,7 @@ uint32_t update_regs(struct regs *r)
 
 struct soc15 {
 	char name[MAXLEN];
-	uint64_t off[32][8]; // inst, seg
+	uint64_t off[256][256]; // inst, seg
 	struct soc15 *next;
 };
 
@@ -393,7 +393,7 @@ int istr_cmp(const char* a, const char* b)
 
 static int reg_sort(const void *a, const void *b)
 {
-	const struct regs **A = a, **B = b;
+	const struct regs **A = (const struct regs**)a, **B = (const struct regs**)b;
 	return istr_cmp((*A)->name, (*B)->name);
 }
 
@@ -407,6 +407,7 @@ int main(int argc, char **argv)
 	struct bitfield *b;
 	struct soc15 *s;
 	int x, y;
+	size_t read_size;
 
 	if (argc != 3 && argc != 2) {
 		fprintf(stderr, "Usage:\n"
@@ -417,7 +418,7 @@ int main(int argc, char **argv)
 	}
 
 	if (argc == 3) {
-		f = fopen(argv[1], "rb");
+		f = fopen(argv[1], "r");
 		if (!f) {
 			fprintf(stderr, "[ERROR]: Could not open file '%s'\n", argv[1]);
 			return EXIT_FAILURE;
@@ -426,10 +427,11 @@ int main(int argc, char **argv)
 		size = ftell(f);
 		fseek(f, 0, SEEK_SET);
 		rf = calloc(1, size + 1);
-		fread(rf, 1, size, f);
+		read_size = fread(rf, 1, size, f);
+		rf[read_size] = '\0';
 		fclose(f);
 
-		f = fopen(argv[2], "rb");
+		f = fopen(argv[2], "r");
 		if (!f) {
 			fprintf(stderr, "[ERROR]: Could not open file '%s'\n", argv[2]);
 			return EXIT_FAILURE;
@@ -438,7 +440,8 @@ int main(int argc, char **argv)
 		size = ftell(f);
 		fseek(f, 0, SEEK_SET);
 		bf = calloc(1, size + 1);
-		fread(bf, 1, size, f);
+		read_size = fread(bf, 1, size, f);
+		bf[read_size] = '\0';
 		fclose(f);
 
 		fprintf(stderr, "Compiling registers...\n");
@@ -467,7 +470,7 @@ int main(int argc, char **argv)
 			}
 		}
 	} else {
-		f = fopen(argv[1], "rb");
+		f = fopen(argv[1], "r");
 		if (!f) {
 			fprintf(stderr, "[ERROR]: Could not open file '%s'\n", argv[1]);
 			return EXIT_FAILURE;
@@ -476,14 +479,15 @@ int main(int argc, char **argv)
 		size = ftell(f);
 		fseek(f, 0, SEEK_SET);
 		rf = calloc(1, size + 1);
-		fread(rf, 1, size, f);
+		read_size = fread(rf, 1, size, f);
+		rf[read_size] = '\0';
 		fclose(f);
 		s = compile_soc15(rf);
 		while (s) {
 			printf("%s\n", s->name);
 			for (x = 0; x < 32; x++) {
 				printf("\t");
-				for (y = 0; y < 8; y++) {
+				for (y = 0; y < 32; y++) {
 					printf("0x%08"PRIx64" ", s->off[x][y]);
 				}
 				printf("\n");

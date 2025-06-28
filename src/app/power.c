@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -234,7 +234,6 @@ void umr_power(struct umr_asic *asic)
 		if ((i = wgetch(stdscr)) != ERR) {
 			if (i == 'q') {
 				quit = 1;
-				break;
 			}
 		}
 		refresh();

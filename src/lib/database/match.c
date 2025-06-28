@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,6 +24,21 @@
 
 #include "umr.h"
 
+/**
+ * @brief Finds an IP in the database that matches the specified criteria.
+ *
+ * This function searches through a linked list of database scan items to find an item that matches
+ * the given IP name, major version, minor version, and revision. It also optionally filters by a desired path.
+ *
+ * @param db Pointer to the head of the database scan item list.
+ * @param ipname The name of the IP to search for.
+ * @param maj The major version number of the IP.
+ * @param min The minor version number of the IP.
+ * @param rev The revision number of the IP.
+ * @param desired_path Optional path to filter the search. If NULL, no path filtering is applied.
+ *
+ * @return A pointer to the best matching `umr_database_scan_item` if found, otherwise NULL.
+ */
 struct umr_database_scan_item *umr_database_find_ip(
 	struct umr_database_scan_item *db,
 	char *ipname, int maj, int min, int rev,
@@ -40,11 +55,11 @@ struct umr_database_scan_item *umr_database_find_ip(
 				if (maj == si->maj) {
 					if (!best) {
 						best = si;
-					} else {
-						if (abs(min - si->min) < abs(min - best->min)) {
+					} else if (min >= si->min) {
+						if (min - si->min < min - best->min || min < best->min) {
 							best = si;
-						} else {
-							if (abs(rev - si->rev) < abs(rev - best->rev))
+						} else if (min - si->min == min - best->min) {
+							if (rev >= si->rev && (rev - si->rev < rev - best->rev || rev < best->rev))
 								best = si;
 						}
 					}

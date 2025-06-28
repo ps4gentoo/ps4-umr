@@ -29,7 +29,7 @@ More detailed information about the register can be returned with:
 
 ::
 
-	struct umr_reg *umr_find_reg_data(struct umr_asic *asic, char *regname);
+	struct umr_reg* umr_find_reg_by_name(struct umr_asic* asic, const char* regname, struct umr_ip_block** ip);
 
 Which returns a pointer to the following structure if the register is
 found or NULL if not.
@@ -68,7 +68,7 @@ For example, to find a register:
 
 	struct umr_reg *reg;
 
-	reg = umr_find_reg_data(asic, "mmUVD_NO_OP");
+	reg = umr_find_reg_by_name(asic, "mmUVD_NO_OP", NULL);
 	printf("mmUVD_NO_OP found at 0x%lx\n", (unsigned long)reg->addr * 4);
 
 
@@ -198,7 +198,7 @@ An example usage:
 
 	struct umr_reg *reg;
 
-	reg = umr_find_reg_data(asic, "mmUVD_NO_OP");
+	reg = umr_find_reg_by_name(asic, "mmUVD_NO_OP", NULL);
 	printf("mmUVD_NO_OP value is 0x%lx\n",
 		(unsigned long)umr_read_reg(asic, reg->addr * 4, reg->type));
 
@@ -257,6 +257,7 @@ functions can be used:
 	uint32_t umr_bitslice_compose_value(struct umr_asic *asic, struct umr_reg *reg, char *bitname, uint32_t regvalue);
 	uint32_t umr_bitslice_compose_value_by_name(struct umr_asic *asic, char *reg, char *bitname, uint32_t regvalue);
 	uint32_t umr_bitslice_compose_value_by_name_by_ip(struct umr_asic *asic, char *ip, char *regname, char *bitname, uint32_t regvalue);
+	uint64_t umr_bitslice_compose_value_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip, int instance, char *regname, char *bitname, uint64_t regvalue);
 
 These take a value packed in the lower bits of 'regvalue' and shift
 them (with masking) to the correct location for a register
@@ -284,7 +285,7 @@ pointer can be used to prevent repeated lookups of the register data.
 	uint32_t value = 0;
 	struct umr_reg *reg;
 
-	reg = umr_find_reg_data(asic, "mmUVD_LMI_EXT40_ADDR");
+	reg = umr_find_reg_by_name(asic, "mmUVD_LMI_EXT40_ADDR", NULL);
 	if (reg) {
 		value |= umr_bitslice_compose_value(asic, reg, "ADDR",       0xAA);
 		value |= umr_bitslice_compose_value(asic, reg, "INDEX",      3);
@@ -306,6 +307,7 @@ To decode a registers bitfields the following functions can be used:
 	uint32_t umr_bitslice_reg(struct umr_asic *asic, struct umr_reg *reg, char *bitname, uint32_t regvalue);
 	uint32_t umr_bitslice_reg_by_name(struct umr_asic *asic, char *regname, char *bitname, uint32_t regvalue);
 	uint32_t umr_bitslice_reg_by_name_by_ip(struct umr_asic *asic, char *ip, char *regname, char *bitname, uint32_t regvalue);
+	uint64_t umr_bitslice_reg_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip, int instance, char *regname, char *bitname, uint64_t regvalue);
 
 These take a full register specified by 'regname' and return the masked
 and shifted bitfield.  For instance:

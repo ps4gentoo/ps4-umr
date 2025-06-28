@@ -2,7 +2,9 @@
 
 DECLARE_TESTS(mmio_tests);
 DECLARE_TESTS(vm_tests);
+#if COMMANDS_TEST
 DECLARE_TESTS(server_tests);
+#endif
 
 int main(int argc, char **argv)
 {
@@ -10,7 +12,9 @@ int main(int argc, char **argv)
 
     REGISTER_TESTS(mmio_tests);
     REGISTER_TESTS(vm_tests);
+    #if COMMANDS_TEST
     REGISTER_TESTS(server_tests);
+    #endif
 
     if (1 < argc) {
         global_config.envdef_base_dir = argv[1];

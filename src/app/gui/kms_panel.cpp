@@ -24,6 +24,7 @@
  */
 #include "panels.h"
 #include <map>
+#include <string>
 
 class KmsPanel : public Panel {
 public:
@@ -37,7 +38,13 @@ public:
 			json_value_free(json_object_get_wrapping_value(last_answer));
 	}
 
-	void process_server_message(JSON_Object *request, JSON_Value *answer) {
+	void process_server_message(JSON_Object *response, void *raw_data, unsigned raw_data_size) {
+		JSON_Value *error = json_object_get_value(response, "error");
+		if (error)
+			return;
+
+		JSON_Object *request = json_object(json_object_get_value(response, "request"));
+		JSON_Value *answer = json_object_get_value(response, "answer");
 		const char *command = json_object_get_string(request, "command");
 
 		if (!strcmp(command, "kms")) {
@@ -223,7 +230,13 @@ public:
 			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + frame_padding.x);
 			BeginBorderedGroup(colpadding, colwidth);
 			CenterText(owner, colwidth);
-			ImGui::TextUnformatted(owner);
+			if (strcmp(owner, "[fbcon]") == 0) {
+				ImGui::TextUnformatted(owner);
+			} else {
+				if (ImGui::Button(owner)) {
+					goto_tab(SDLK_o);
+				}
+			}
 			std::vector<JSON_Object *> sorted_fb;
 
 			for (int i = 0; i < json_array_get_count(fbs); i++) {
@@ -252,7 +265,20 @@ public:
 					ImGui::Text("format: %.*s", (int)(fourcc - fmt), fmt);
 					fourcc++;
 					ImGui::Text("fourcc: %.*s", (int)(strlen(fourcc) - 1), fourcc);
-					ImGui::Text("modifier: 0x%" PRIx64, (uint64_t) json_object_get_number(fb, "modifier"));
+					ImGui::Text("modifier: 0x%s", json_object_get_string(fb, "modifier"));
+					if (json_object_has_value(fb, "modifier_str") && ImGui::IsItemHovered()) {
+						ImGui::BeginTooltip();
+						ImGui::Text("Description: ");
+						const char *str = json_object_get_string(fb, "modifier_str");
+						ImGui::Indent();
+						do {
+							const char *next = strchr(str + 1, ',');
+							ImGui::TextUnformatted(str, next);
+							str = next ? next + 1 : NULL;
+						} while (str);
+						ImGui::Unindent();
+						ImGui::EndTooltip();
+					}
 					ImGui::Text("size: %dx%d",
 						(int)json_object_get_number(size, "w"),
 						(int)json_object_get_number(size, "h"));

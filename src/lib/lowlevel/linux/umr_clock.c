@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,6 +21,7 @@
  *
  */
 #include "umr.h"
+#include <time.h>
 
 /**
  * umr_read_clock - Read a clock information via sysfs
@@ -67,13 +68,17 @@ int umr_set_clock(struct umr_asic *asic, const char* clock_name, void* value)
 	int fd;
 	int input_flag = 0;
 	char input[8];
+	struct timespec wait = { 0 };
 	uint32_t input_len = strlen(value);
 	int ret = -1;
 
 	umr_set_clock_performance(asic, "manual");
 	strcpy(input, value);
 	input[input_len] = ' ';
-	sleep(0.5);
+	
+	wait.tv_nsec = 500 * 1000000; /* 500 ms */
+	nanosleep(&wait, NULL);
+
 	snprintf(name, sizeof(name)-1, \
 		"/sys/class/drm/card%d/device/pp_dpm_%s", asic->instance, clock_name);
 	fd = open(name, O_RDWR);

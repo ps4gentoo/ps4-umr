@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,7 +24,7 @@
  */
 #include "umrapp.h"
 
-void umr_scan_log(struct umr_asic *asic)
+void umr_scan_log(struct umr_asic *asic, int use_new)
 {
 	char line[256], *chr;
 	FILE *f;
@@ -32,6 +32,17 @@ void umr_scan_log(struct umr_asic *asic)
 	unsigned long delta, did, regno, value, write;
 	struct umr_reg *reg;
 	struct umr_ip_block *ip;
+	char *prefix, *rreg, *wreg;
+
+	if (use_new) {
+		prefix = "amdgpu_device_";
+		rreg = "amdgpu_device_rreg: 0x%08lx, 0x%08lx, 0x%08lx";
+		wreg = "amdgpu_device_wreg: 0x%08lx, 0x%08lx, 0x%08lx";
+	} else {
+		prefix = "amdgpu_mm_";
+		rreg = "amdgpu_mm_rreg: 0x%08lx, 0x%08lx, 0x%08lx";
+		wreg = "amdgpu_mm_wreg: 0x%08lx, 0x%08lx, 0x%08lx";
+	}
 
 	f = fopen("/sys/kernel/debug/tracing/trace", "r");
 	if (!f) {
@@ -44,12 +55,12 @@ void umr_scan_log(struct umr_asic *asic)
 		delta = 0;
 		write = 0;
 
-		chr = strstr(line, "amdgpu_mm_");
+		chr = strstr(line, prefix);
 		if (chr) {
-			if (sscanf(chr, "amdgpu_mm_rreg: 0x%08lx, 0x%08lx, 0x%08lx",
+			if (sscanf(chr, rreg,
 				   &did, &regno, &value) != 3) {
 				write = 1;
-				if (sscanf(chr, "amdgpu_mm_wreg: 0x%08lx, 0x%08lx, 0x%08lx",
+				if (sscanf(chr, wreg,
 					&did, &regno, &value) != 3)
 					continue;
 			}

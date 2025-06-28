@@ -27,13 +27,19 @@ for instance, '.vega10'.
 Force a specific PCI device using the domain:bus:slot.function format in hex.
 This is useful when more than one GPU is available. If the amdgpu driver is
 loaded the corresponding instance will be automatically detected.
+.IP "--by-pci <device>"
+Like --pci but still uses the traditional debugfs path to interface with
+the hardware.  This is useful for interacting with APIs that identify hardware
+by the PCI bus address.
 .IP "--gfxoff, -go <0 | 1>"
 Turn on or off GFXOFF on select hardware.  A non-zero value enables the GFXOFF feature and
 a zero value disables it.
-.IP "--vm_partition, -vmp <-1, 0...n>"
+.IP "--vm-partition, -vmp <-1, 0...n>"
 Select a VM partition for all GPUVM accesses.  Default is -1 which
 refers to the 0'th instance of the VM hub which is not the same as
 specifying '0'.  Values above -1 are for ASICs with multiple IP instances.
+.IP "--vgpr-granularity, -vgpr <-1, 0...n>"
+Specify the VGPR size granularity as a power of 2, e.g., '2' means 4 DWORDs per increment.
 .IP "--option, -O <string>[,<string>,...]"
 Specify options to the tool.  Multiple options can be specified as comma
 separated strings.  Options should be specified before --update or --force commands
@@ -54,17 +60,13 @@ separated strings.  Options should be specified before --update or --force comma
 .B empty_log
      Empties the MMIO log after reading it.
 
-.B follow
-     Causes the --logscan command to repeatedly produce output without
-     exiting.
-
 .B no_follow_ib
      Instruct the --ring-stream command to not attempt to follow IBs pointed to by the packets
      in the ring.
 
 .B use_pci
      Enable PCI access for MMIO instead of using debugfs.  Used by the --read,
-     --scan, --top, --write, and --write-bit commands.  Does not currently
+     --top, --write, and --write-bit commands.  Does not currently
      support multiple instances of the same GPU (PCI device ID).  Note that access
      to non-MMIO registers might be disabled when using this flag.
 
@@ -108,11 +110,11 @@ separated strings.  Options should be specified before --update or --force comma
     on the verbosity of the output.  This option disables this and will print the full chain of
     PDEs for every page decoded.
 
-.B no_scan_waves
-   Disable scanning wave data during --ring-stream output.
-
 .B force_asic_file
    Force using a database .asic file matching in pci.did instead of IP discovery.
+
+.B skip_gprs
+   Skip reading SGPRS and VGPRS when scanning waves
 
 .SH Bank Selection
 .IP "--bank, -b <se> <sh> <instance>"
@@ -161,12 +163,6 @@ a
 can be appended to a register name to read any register that contains
 a partial match.  For instance, "*.vcn10.ADDR*" would read any register
 from the 'VCN10' block which contains 'ADDR' in the name.
-.IP "--scan, -s <string>"
-Scan and print an IP block by name, for example,
-.B uvd6
-or
-.B carrizo.uvd6.
-Can be used multiple times in a single invocation.
 
 .SH Device Utilization
 .IP "--top, -t"
@@ -245,24 +241,26 @@ when on the left side and
 .B wptr
 when on the right side of the range.
 For instance,
-"-R gfx" prints the entire gfx ring, "-R gfx[0:16]" prints
-the contents from 0 to 16 inclusively, and "-R gfx[.]" or
-"-R gfx[.:.]" prints the range [rptr,wptr]. When one of
+"-RS gfx" prints the entire gfx ring, "-R gfx[0:16]" prints
+the contents from 0 to 16 inclusively, and "-RS gfx[.]" or
+"-RS gfx[.:.]" prints the range [rptr,wptr]. When one of
 the range limits is a number while the other is the dot, '.',
 then the number indicates the relative range before or after the
-corresponding ring pointer. For instance, "-R sdma0[16:.]"
+corresponding ring pointer. For instance, "-RS sdma0[16:.]"
 prints [wptr-16, wptr] words of the SDMA0 ring, and
-"-R sdma1[.:32]" prints [rptr, rptr+32] double-words of the
+"-RS sdma1[.:32]" prints [rptr, rptr+32] double-words of the
 SDMA1 ring. The contents of the ring is always interpreted,
 if it can be interpreted.
 .IP "--dump-ib, -di [vmid@]address length [pm]"
 Dump an IB packet at an address with an optional VMID.  The length is specified
 in bytes.  The type of decoder <pm> is optional and defaults to PM4 packets.
-Can specify '3' for SDMA packets, '2' for MES packets.
+Can specify '4' for PM4 packets, '3' for SDMA packets, '2' for MES packets, '1' for VPE packets, '5' for UMSCH packets, '6' for HSA packets, '7' for VCN decode, and '8' for VCN encode.
 .IP "--dump-ib-file, -df filename [pm]"
-Dump an IB stored in a file as a series of hexadecimal DWORDS one per line.
-Optionally supply a PM type, can specify '2' for MES packets, '3' for SDMA IBs, or '4' for
-PM4 IBs.  The default is PM4.
+Dump an IB stored in a file as a series of hexadecimal DWORDS one per line.  If the filename
+ends in .bin the file is treated as binary, if the filename ends in .ring it treats it as a
+ring copy and skips the first 12 bytes.  Can optionally specify '3' for SDMA packets, '2' for
+MES packets, '1' for VPE packets, '5' for UMSCH packets, '6' for HSA packets, '7' for VCN decode,
+and '8' for VCN encode.  The default is PM4.
 .IP "--header-dump, -hd [HEADER_DUMP_reg]"
 Dump the contents of the HEADER_DUMP buffer and decode the opcode into a human readable string.
 .IP "--print-cpc, -cpc"
@@ -271,8 +269,8 @@ Dump CPC register data.
 Dump SDMA register data.
 .IP "--logscan, -ls"
 Read and display contents of the MMIO register log.  Usually specified
-with '-O bits,follow,empty_log' to enable continual dumping of the trace
-log.
+with '-O bits,empty_log' to enable continual dumping of bit fields and
+emptying of the trace log after.
 
 .SH Power and Clock
 .IP "--power, -p"
@@ -299,8 +297,43 @@ Set power_dpm_force_performance_level to auto.
 Read powerplay table value and print it to stdout.  This command will print all the powerplay table
 information or the corresponding string in powerplay table.
 
-.IP "--gpu-metrics, -gm"
-Print the GPU metrics table for the device.
+.IP "--gpu-metrics, -gm [delay]"
+Print the GPU metrics table for the device, optionally continuously read every 'delay' milliseconds.
+
+.IP "--power, -p"
+Read the conetent of clocks, temperature, gpu loading at runtime options 'use_colour' to colourize output.
+
+.SH Video BIOS Information
+.IP "--vbios-info, -vi"
+Print Video BIOS information
+
+.SH Test Vector Generation
+.IP "--test-log, -tl <filename>"
+Log all MMIO/memory reads to a file.
+
+.IP "--test-harness, -th <filename>"
+Use a test harness file instead of reading from hardware.
+
+.SH RUMR Commands
+.IP "--rumr-client <server>"
+Run as a RUMR client connecting to 'server', e.g. tcp://127.0.0.1:9000.  You can also
+use the 'RUMR_SERVER_ADDR' environment variable to instruct umr to connect as a client.  With
+the environment variable set you don't need to specify --rumr-client.
+
+.IP "--rumr-server <server>"
+Run as a RUMR server binding to 'server', e.g. tcp://127.0.0.1:9000.
+
+.SH KFD Support
+.IP "--runlist, -rls <node>"
+Dump any runlists for a given KFD node specified.
+
+.IP "--dump-mqd vmid@virtualaddr engsel"
+Dump an MQD from a given VMID and virtual address for a given engine and asic family.
+Engines are 0=compute, 2=sdma0, 3=sdma1, 4=gfx, 5=mes.
+
+.SH Scriptware Support
+.IP "--script [commands]"
+Run a script helper command.  Run without parameters to see list of commands.
 
 .SH "Notes"
 
@@ -314,6 +347,9 @@ GPU hangs occur frequently.  When PG is enabled it will read a constant 0.
 
 .B UMR_DATABASE_PATH
     Should be set to the top directory of the database tree used for register, IP, and ASIC model data.
+
+.B RUMR_SERVER_ADDR
+    Specifies the server address the rumr client should connect to.  This can be set to avoid needing to add --rumr-client to the command line.
 
 .SH FILES
 .B ${CMAKE_INSTALL_PREFIX}/share/bash-completion/completions/umr

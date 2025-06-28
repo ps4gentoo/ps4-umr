@@ -18,7 +18,7 @@ fi
 
 _umr_comp_option_flags()
 {
-    local FLAGS=(bits bitsfull empty_log follow no_follow_ib use_pci use_colour read_smc quiet no_kernel verbose halt_waves disasm_early_term no_disasm disasm_anyways wave64 full_shader no_fold_vm_decode no_scan_waves)
+    local FLAGS=(bits bitsfull empty_log follow no_follow_ib use_pci use_colour read_smc quiet no_kernel verbose halt_waves disasm_early_term no_disasm disasm_anyways wave64 full_shader no_fold_vm_decode)
     local F G CURR_OPTIONS
     local ACTIVE_OPTIONS=()
     local ACTIVE_FLAGS=()
@@ -252,7 +252,7 @@ _umr_comp_lookup()
 
 _umr_comp_ipblock()
 {
-    # Handle --list-regs and --scan, using the --scan model
+    # Handle --list-regs
 
     _umr_setup_gpu_ipblocks
 
@@ -333,7 +333,7 @@ _umr_comp_ring_stream()
 
 _umr_completion()
 {
-    local ALL_LONG_ARGS=(--database-path --option --gpu --instance --force --pci --gfxoff --vm_partition --bank --sbank --cbank --config --enumerate --list-blocks --list-regs --dump-discovery-table --lookup --write --writebit --read --scan --logscan --top --waves --profiler --vm-decode --vm-read --vm-write --vm-write-word --vm-disasm --ring-stream --dump-ib --dump-ib-file --header-dump --power --clock-scan --clock-manual --clock-high --clock-low --clock-auto --ppt-read --gpu-metrics --power --vbios_info --test-log --test-harness --server --gui)
+    local ALL_LONG_ARGS=(--database-path --option --gpu --instance --force --pci --gfxoff --vm-partition --bank --sbank --cbank --config --enumerate --list-blocks --list-regs --dump-discovery-table --lookup --write --writebit --read --logscan --top --waves --profiler --vm-decode --vm-read --vm-write --vm-write-word --vm-disasm --ring-stream --dump-ib --dump-ib-file --header-dump --power --clock-scan --clock-manual --clock-high --clock-low --clock-auto --ppt-read --gpu-metrics --power --vbios-info --test-log --test-harness --server --gui)
 
     local cur prev
 
@@ -344,10 +344,10 @@ _umr_completion()
     prev=$3
 
     case $prev in
-	--database-path|--dbp)
+	--database-path|-dbp)
 	    compopt -o default -o dirnames
 	    ;;
-	--option|-O|bits|bitsfull|empty_log|follow|no_follow_ib|use_pci|use_colour|read_smc|quiet|no_kernel|verbose|halt_waves|disasm_early_term|no_disasm|disasm_anyways|wave64|full_shader|no_fold_vm_decode|no_scan_waves|,)
+	--option|-O|bits|bitsfull|empty_log|follow|no_follow_ib|use_pci|use_colour|read_smc|quiet|no_kernel|verbose|halt_waves|disasm_early_term|no_disasm|disasm_anyways|wave64|full_shader|no_fold_vm_decode|,)
 	    _umr_comp_option_flags
 	    ;;
 	--force|-f)
@@ -365,7 +365,7 @@ _umr_completion()
 	--gfxoff|-go)
 	    COMPREPLY=( $(compgen -W "0 1" -- "$cur") )
 	    ;;
-        -lr|--list-regs|-s|--scan)
+        -lr|--list-regs)
             _umr_comp_ipblock
             ;;
 	--lookup|-lu)
@@ -400,3 +400,4 @@ _umr_completion()
 }
 
 complete -F _umr_completion umr
+complete -F _umr_completion umrgui

@@ -7,3 +7,5 @@ add_library(database OBJECT
   match.c
   free_scan.c
 )
+
+target_link_libraries(database parson)

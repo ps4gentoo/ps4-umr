@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -56,6 +56,23 @@ static void fill_ipver_from_path(char* ip_path, struct umr_ip_block* ip_block) {
 	}
 }
 
+/**
+ * @brief Reads an IP block from the database.
+ *
+ * This function reads an IP (Integrated Processor) block's register information
+ * from a specified file in the database. It parses the file to extract register
+ * details and populates an `umr_ip_block` structure with this information.
+ *
+ * @param soc15        Pointer to the SOC15 database, which contains information about various IP blocks.
+ * @param path         The base path where the IP block's register file is located.
+ * @param filename     The name of the file containing the IP block's register information.
+ * @param cmnname      Common name for the IP block.
+ * @param soc15name    SOC15-specific name for the IP block.
+ * @param inst         Instance number of the IP block.
+ * @param errout       Function pointer to an error output function used for logging errors.
+ *
+ * @return A pointer to a populated `umr_ip_block` structure on success, or NULL if an error occurs.
+ */
 struct umr_ip_block *umr_database_read_ipblock(struct umr_soc15_database *soc15, char *path, char *filename, char *cmnname, char *soc15name, int inst, umr_err_output errout)
 {
 	struct umr_ip_block *ip;
@@ -77,7 +94,7 @@ struct umr_ip_block *umr_database_read_ipblock(struct umr_soc15_database *soc15,
 		}
 	}
 
-	f = umr_database_open(path, filename);
+	f = umr_database_open(path, filename, 0);
 	if (!f) {
 		errout("[ERROR]: IP register file [%s] not found\n", filename);
 		errout("[ERROR]: These files are typically found in the source tree under [database/ip/]\n");

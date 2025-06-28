@@ -22,31 +22,45 @@
  * next paragraph) shall be included in all copies or substantial portions
  * of the Software.
  */
-#include <SDL.h>
+#include "parson.h"
 #include <fcntl.h>
 #include <mutex>
 #include <unistd.h>
 #include <vector>
 #include <stdio.h>
-#if UMR_GUI_REMOTE
+#include <pthread.h>
+#include <regex.h>
+#include <limits.h>
+
+#if UMR_SERVER
 #include <nanomsg/nn.h>
 #include <nanomsg/reqrep.h>
 #endif
-#include <pthread.h>
-#include <regex.h>
-
-#include "parson.h"
-#include "gui/panels.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl.h"
 #include "glad/glad.h"
+
+#include <SDL.h>
+#include "gui/panels.h"
+#define EGL_EGLEXT_PROTOTYPES
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+
+#include "gui/qoi/qoi.h"
 
 /* Random helpers */
 extern void send_request(JSON_Value *req, struct umr_asic *asic);
 extern void force_redraw();
 extern void add_vertical_line(const ImVec2& avail);
 extern bool kb_shortcut(int keycode);
+extern GLuint texture_from_qoi_buffer(int width, int height, void *buffer, int buffer_size);
+extern void goto_tab(int keycode);
+extern float get_gui_scale();
+extern "C" {
+	JSON_Value *umr_process_json_request(JSON_Object *request, void **raw_data, unsigned int *raw_data_size);
+}
+
 
 class SyntaxHighlighter {
 public:
@@ -68,6 +82,8 @@ private:
 	char *output;
 };
 
+static pthread_mutex_t mtx;
+
 #include "gui/info_panel.cpp"
 #include "gui/registers_panel.cpp"
 #include "gui/power_panel.cpp"
@@ -77,6 +93,7 @@ private:
 #include "gui/memory_debug_panel.cpp"
 #include "gui/waves_panel.cpp"
 #include "gui/kms_panel.cpp"
+#include "gui/buffer_object_panel.cpp"
 
 struct Link {
 	int sock;
@@ -84,8 +101,34 @@ struct Link {
 	bool use_sock;
 };
 
-JSON_Value *query(struct Link& lnk, JSON_Value *request) {
-	#if UMR_GUI_REMOTE
+static void save_to_disk(const char *session_folder, int msg_idx,
+						 const char *answer_as_str, size_t answer_len,
+						 void *raw_data, int raw_data_size) {
+	char filename[PATH_MAX];
+
+	sprintf(filename, "%s/%d.json", session_folder, msg_idx);
+	FILE *f = fopen(filename, "w");
+	if (f) {
+		fwrite(answer_as_str, 1, answer_len, f);
+		fclose(f);
+
+		if (raw_data_size) {
+			sprintf(filename, "%s/%d.raw", session_folder, msg_idx);
+			FILE *f = fopen(filename, "wb");
+			if (f) {
+				uint32_t s = htole32(raw_data_size);
+				fwrite(&s, 1, sizeof(raw_data_size), f);
+				fwrite(raw_data, 1, raw_data_size, f);
+				fclose(f);
+			}
+		}
+	}
+}
+
+JSON_Value *query(struct Link& lnk, JSON_Value *request,
+				  void **raw_data, unsigned *raw_data_size,
+				  const char *session_folder, int msg_idx) {
+	#if UMR_SERVER
 	if (lnk.use_sock) {
 		char* s = json_serialize_to_string(request);
 		int len = strlen(s) + 1;
@@ -103,16 +146,48 @@ JSON_Value *query(struct Link& lnk, JSON_Value *request) {
 		len = nn_recv(lnk.sock, &buffer, NN_MSG, 0);
 		if (len < 0)
 			exit(0);
+
 		if (len == 0)
 			return NULL;
 
-		buffer[len - 1] = '\0';
-		JSON_Value *out = json_parse_string(buffer);
+		int strl = strlen(&buffer[sizeof(uint32_t)]) + 1;
+		memcpy(raw_data_size, buffer, sizeof(uint32_t));
+		assert(len == sizeof(uint32_t) + strl + *raw_data_size);
+		JSON_Value *out = json_parse_string(&buffer[sizeof(uint32_t)]);
+		if (json_object_get_boolean(json_object(out), "has_raw_data")) {
+			assert(*raw_data_size);
+			*raw_data = malloc(*raw_data_size);
+			memcpy(*raw_data,
+				   &buffer[sizeof(uint32_t) + strl],
+				   *raw_data_size);
+		} else {
+			assert(*raw_data_size == 0);
+		}
+
+		/* Save to disk for replay */
+		if (session_folder)
+			save_to_disk(session_folder, msg_idx,
+						 &buffer[sizeof(uint32_t)], strl,
+						 raw_data ? *raw_data : NULL, *raw_data_size);
+
 		nn_freemsg(buffer);
+
 		return out;
 	} else
 	#endif
-		return umr_process_json_request(json_object(request));
+	{
+		JSON_Value *in = umr_process_json_request(json_object(request), raw_data, raw_data_size);
+
+		if (session_folder) {
+			char *s = json_serialize_to_string(in);
+			save_to_disk(session_folder, msg_idx,
+						 s, strlen(s),
+						 raw_data ? *raw_data : NULL, *raw_data_size);
+			json_free_serialized_string(s);
+		}
+
+		return in;
+	}
 }
 
 void force_redraw() {
@@ -122,20 +197,22 @@ void force_redraw() {
 }
 
 static struct Link lnk;
-static pthread_mutex_t mtx;
 static pthread_cond_t cond;
 static bool done;
 
 struct AsicData {
-	AsicData(JSON_Object *answer, long did, int instance) {
+	AsicData(JSON_Object *answer, char *ip_discovery_dump, long did, int instance) {
 		int tryipdiscovery = 0;
 		memset(&options, 0, sizeof options);
 		options.instance = instance;
 		options.database_path[0] = '\0';
 		options.no_disasm = 0;
-		if (json_object_has_value(answer, "ip_discovery_dump")) {
-			const char *script = json_object_get_string(answer, "ip_discovery_dump");
-			struct umr_test_harness *th = umr_create_test_harness(script);
+		options.no_follow_ib = 1;
+		options.vm_partition = -1;
+		options.no_follow_loadx = 1;
+
+		if (ip_discovery_dump && strlen(ip_discovery_dump)) {
+			struct umr_test_harness *th = umr_create_test_harness(ip_discovery_dump);
 
 			options.test_log = 1;
 			options.th = th;
@@ -143,11 +220,14 @@ struct AsicData {
 				(char*)json_object_get_string(answer, "name"),
 				&options,
 				printf);
-			umr_scan_config(asic, 0);
-			asic->did = did;
+
+			if (asic) {
+				umr_scan_config(asic, 0);
+				asic->did = did;
+			}
 			umr_free_test_harness(th);
 		} else {
-			/* Don't rely on local IP discovery data zvzn if available, because
+			/* Don't rely on local IP discovery data if available, because
 			 * it probably won't match the one on the server.
 			 */
 			options.force_asic_file = 1;
@@ -170,6 +250,7 @@ struct AsicData {
 		panels.push_back(new MemoryDebugPanel(asic));
 		panels.push_back(new WavesPanel(asic));
 		panels.push_back(new KmsPanel(asic));
+		panels.push_back(new BufferObjectPanel(asic));
 
 		for (auto panel: panels) {
 			panel->store_info(json_object_get_wrapping_value(answer));
@@ -229,34 +310,61 @@ AsicData *answer_to_asic_data(std::vector<AsicData*> *asics, JSON_Object *reques
 	return NULL;
 }
 
+static int64_t time_ns(void)
+{
+   struct timespec ts;
+   timespec_get(&ts, CLOCK_MONOTONIC);
+   return ts.tv_nsec + ts.tv_sec * 1000000000;
+}
 
-static void process_response(std::vector<AsicData*> *asics, JSON_Object *in) {
-	JSON_Object *request = json_object(json_object_get_value(in, "request"));
+static float ping_value = -1;
+
+static void process_response(std::vector<AsicData*> *asics, JSON_Object *response, void *raw_data, unsigned raw_data_size) {
+	JSON_Object *request = json_object(json_object_get_value(response, "request"));
 	const char *cmd = json_object_get_string(request, "command");
-	JSON_Value *error = json_object_get_value(in, "error");
+	JSON_Value *error = json_object_get_value(response, "error");
 
-
-	if (!error && cmd) {
-		if (!strcmp(cmd, "enumerate")) {
-			JSON_Array *as_array = json_array(json_object_get_value(in, "answer"));
+	if (cmd) {
+		if (!error && !strcmp(cmd, "enumerate")) {
+			JSON_Array *as_array = json_array(json_object_get_value(response, "answer"));
 			if (as_array) {
 				int s = json_array_get_count(as_array);
 				for (int i = 0; i < s; i++) {
 					JSON_Object *v = json_object(json_array_get_value(as_array, i));
+
+					char *ip_discovery_dump = NULL;
+
+					int off = json_object_get_number(v, "ip_discovery_offset");
+					int len = json_object_get_number(v, "ip_discovery_len");
+					if (len > 0)
+						ip_discovery_dump = strndup(&((char*)raw_data)[off], len);
+
 					AsicData *d = new AsicData(v,
+						ip_discovery_dump,
 						json_object_get_number(v, "did"),
 						json_object_get_number(v, "instance"));
 					asics->push_back(d);
+
+					free(ip_discovery_dump);
 				}
 				return;
 			}
+		}
+		if (!error && !strcmp(cmd, "ping")) {
+			int64_t pong = time_ns();
+			int64_t ping = (int64_t)json_object_get_number(request, "ts");
+			ping_value =(pong - ping) / 1000000.0f;
+			return;
 		}
 
 		AsicData *data = answer_to_asic_data(asics, request);
 
 		if (data) {
+			JSON_Value *v = json_object_get_value(response, "answer");
+
 			for (auto panel: data->panels) {
-				panel->process_server_message(request, json_object_get_value(in, "answer"));
+				if (panel->asic == data->asic)
+					panel->process_server_message(response, raw_data, raw_data_size);
 			}
 		}
 	}
@@ -266,45 +374,69 @@ static void process_response(std::vector<AsicData*> *asics, JSON_Object *in) {
 
 static void *communication_thread(void *_job) {
 	int id = 0;
-	char session_filename[512];
+	char session_folder[PATH_MAX];
 	while (id < 1024) {
 		struct stat statbuf;
-		sprintf(session_filename, "/tmp/umr_session.%d.json", id++);
-		if (stat(session_filename, &statbuf) == -1 && errno == ENOENT)
+		snprintf(session_folder, sizeof(session_folder), "/tmp/umr_session.%d", id++);
+		if (stat(session_folder, &statbuf) == -1 && errno == ENOENT) {
 			break;
+		}
 	}
-	JSON_Array *session = json_array(json_value_init_array());
-	std::vector<AsicData*> *asics = (std::vector<AsicData*> *)_job;
 
+	int save_to_disk = mkdir(session_folder, 0755) == 0;
+	if (!save_to_disk) {
+		printf("Failed to create the replay folder (error: %d)\n", errno);
+	}
+
+	std::vector<AsicData*> *asics = (std::vector<AsicData*> *)_job;
+	int64_t last_ping = time_ns();
+
+	int msg_count = 0;
 	while (!done) {
 		pthread_mutex_lock(&mtx);
-		if (pending_request.empty())
-			pthread_cond_wait(&cond, &mtx);
+		if (pending_request.empty()) {
+			int64_t now = time_ns();
+
+			if (now - last_ping > 1000000000) {
+				JSON_Value *req = json_value_init_object();
+				json_object_set_string(json_object(req), "command", "ping");
+				json_object_set_number(json_object(req), "ts", now);
+				last_ping = now;
+				pending_request.push_back(req);
+			} else {
+				struct timespec t;
+				clock_gettime(CLOCK_REALTIME, &t);
+				t.tv_sec += 1;
+				pthread_cond_timedwait(&cond, &mtx, &t);
+			}
+		}
 		for (int i = 0; i < pending_request.size(); i++) {
+			void *raw_data = NULL;
+			unsigned raw_data_size = 0;
 			JSON_Value* req = pending_request[i];
 			pthread_mutex_unlock(&mtx);
-			JSON_Value *in = query(lnk, req);
+			bool is_ping = strcmp(json_object_get_string(json_object(req), "command"), "ping") == 0;
+			JSON_Value *in = query(lnk, req, &raw_data, &raw_data_size,
+										  (save_to_disk && !is_ping) ? session_folder : NULL, msg_count);
+			if (!is_ping)
+				msg_count++;
+
 			pthread_mutex_lock(&mtx);
 
-			/* Save to disk for replay */
-			json_array_append_value(session, json_value_deep_copy(in));
-
-			process_response(asics, json_object(in));
+			process_response(asics, json_object(in), raw_data, raw_data_size);
 
 			json_value_free(in);
 		}
 		pending_request.clear();
 		pthread_mutex_unlock(&mtx);
-
-		json_serialize_to_file(json_array_get_wrapping_value(session), session_filename);
 	}
-	json_value_free(json_array_get_wrapping_value(session));
 	return 0;
 }
 
-
+static int goto_tab_on_next_redraw = -1;
 bool kb_shortcut(int keycode) {
-	return ImGui::GetIO().KeyCtrl && ImGui::IsKeyReleased(SDL_GetScancodeFromKey(keycode));
+	return (ImGui::GetIO().KeyCtrl && ImGui::IsKeyReleased(SDL_GetScancodeFromKey(keycode))) ||
+			goto_tab_on_next_redraw == keycode;
 }
 
 void add_vertical_line(const ImVec2& avail) {
@@ -313,6 +445,96 @@ void add_vertical_line(const ImVec2& avail) {
 	ImVec2 end = start;
 	end.y += avail.y;
 	ImGui::GetWindowDrawList()->AddLine(start, end, ImGui::GetColorU32(ImGuiCol_TabActive));
+}
+
+GLuint texture_from_qoi_buffer(int width, int height, void *buffer, int buffer_size)
+{
+	GLuint texture_id;
+
+	qoi_desc desc;
+	desc.width = width;
+	desc.height = height;
+	desc.channels = 4;
+	desc.colorspace = QOI_LINEAR;
+	void *data = qoi_decode(buffer, buffer_size, &desc, 4);
+
+	glGenTextures(1, &texture_id);
+	glBindTexture(GL_TEXTURE_2D, texture_id);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+				 GL_RGBA, GL_UNSIGNED_BYTE, data);
+	free(data);
+
+	return texture_id;
+}
+
+void goto_tab(int key_code) {
+	goto_tab_on_next_redraw = key_code;
+	force_redraw();
+}
+
+static float gui_scale = 1.0;
+float get_gui_scale() {
+	return gui_scale;
+}
+
+static int replay_up_to(const char *url, std::vector<AsicData*> &asics,
+								std::vector<std::string>& replay_commands,
+								int idx) {
+	char filename[PATH_MAX];
+	void *raw_data = NULL;
+	int msg_idx = 0, fd;
+
+	while (idx < 0 || msg_idx <= idx) {
+		uint32_t raw_data_size = 0;
+		JSON_Value *msg;
+
+		sprintf(filename, "%s/%d.json", url, msg_idx);
+
+		msg = json_parse_file(filename);
+		if (msg == NULL) {
+			/* We're done replaying everything. */
+			break;
+		} else {
+			JSON_Object *e = json_object(msg);
+
+			if (idx < 0) {
+				JSON_Object *req = json_object_get_object(e, "request");
+				replay_commands.push_back(json_object_get_string(req, "command"));
+			}
+
+			if (json_object_get_boolean(e, "has_raw_data")) {
+				sprintf(filename, "%s/%d.raw", url, msg_idx);
+
+				fd = open(filename, O_RDONLY);
+				if (fd >= 0) {
+					uint32_t s;
+					read(fd, &s, sizeof(raw_data_size));
+					raw_data_size = le32toh(s);
+					raw_data = malloc(raw_data_size);
+					read(fd, raw_data, raw_data_size);
+					close(fd);
+				}
+			}
+
+			process_response(&asics, e, raw_data, raw_data_size);
+
+			free(raw_data);
+			raw_data = NULL;
+			json_value_free(msg);
+		}
+
+		msg_idx++;
+	}
+
+	return msg_idx - 1;
+}
+
+void reset_before_replay(std::vector<AsicData*> &asics) {
+	for (auto ad: asics)
+		delete ad;
+	asics.clear();
 }
 
 static int run_gui(const char *url)
@@ -324,12 +546,14 @@ static int run_gui(const char *url)
 	pthread_cond_init(&cond, NULL);
 
 	bool replay = false;
+	int current_replay, max_replay;
 	if (url) {
 		struct stat statbuf;
-		if (stat(url, &statbuf) == 0 && statbuf.st_mode & S_IFMT) {
+		int r = stat(url, &statbuf);
+		if (r == 0 && S_ISDIR(statbuf.st_mode)) {
 			replay = true;
 		} else {
-			#if UMR_GUI_REMOTE
+			#if UMR_SERVER
 			int rv;
 			if ((lnk.sock = nn_socket(AF_SP, NN_REQ)) < 0) {
 				exit(1);
@@ -353,7 +577,7 @@ static int run_gui(const char *url)
 		lnk.use_sock = false;
 	}
 
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
 		printf("Error: %s\n", SDL_GetError());
 		return -1;
 	}
@@ -361,13 +585,9 @@ static int run_gui(const char *url)
 	std::vector<AsicData*> asics;
 
 	pthread_t t_id;
+	std::vector<std::string> replay_commands;
 	if (replay) {
-		JSON_Array *session = json_array(json_parse_file(url));
-		if (!session)
-			return 1;
-		for (int i = 0; i < json_array_get_count(session); i++) {
-			process_response(&asics, json_object(json_array_get_value(session, i)));
-		}
+		current_replay = replay_up_to(url, asics, replay_commands, -1);
 	} else {
 		pthread_create(&t_id, NULL, communication_thread, &asics);
 	}
@@ -390,7 +610,7 @@ static int run_gui(const char *url)
 
 	char title[512];
 	if (lnk.use_sock)
-		sprintf(title, "umr (connected to %s)", url);
+		sprintf(title, "umr (%s)", url);
 	else
 		strcpy(title, "umr");
 	SDL_Window *window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED,
@@ -442,23 +662,25 @@ static int run_gui(const char *url)
 	bool rebuild_scaled_font = false;
 	ImFont *scaled_font = NULL;
 	float old_scale = 1;
-	float scale = 1;
 
 	if (config_filename) {
 		FILE *f = fopen(config_filename, "r");
 		if (f) {
-			if (fscanf(f, "ui_scale=%f", &scale) == 1) {
-				scale = std::max(1.0f, std::min(2.0f, scale));
-				old_scale = scale;
-				if (scale != 1.0)
+			if (fscanf(f, "ui_scale=%f", &gui_scale) == 1) {
+				gui_scale = std::max(1.0f, std::min(2.0f, gui_scale));
+				old_scale = gui_scale;
+				if (gui_scale != 1.0)
 					rebuild_scaled_font = true;
 			}
 			fclose(f);
 		}
+		free((void*)config_filename);
 	}
 
 	// Setup Dear ImGui style (todo: support switch to light theme)
 	ImGui::StyleColorsDark();
+
+	ImGui::GetStyle().AntiAliasedLines = false;
 
 	// Setup Platform/Renderer bindings
 	ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
@@ -477,6 +699,9 @@ static int run_gui(const char *url)
 	json_object_set_string(json_object(req), "command", "enumerate");
 	send_request(req, NULL);
 
+	bool clear_goto_tab_flag = false;
+	float previous_ping = -1;
+
 	while (!done) {
 		struct timespec now;
 		clock_gettime(CLOCK_MONOTONIC, &now);
@@ -488,14 +713,21 @@ static int run_gui(const char *url)
 		}
 		memcpy(&before, &now, sizeof(now));
 
+		if (lnk.use_sock && previous_ping != ping_value) {
+			char title[512];
+			sprintf(title, "umr (%s, %.1f ms)", url, ping_value);
+			previous_ping = ping_value;
+			SDL_SetWindowTitle(window, title);
+		}
+
 		if (rebuild_scaled_font) {
 		    ImFontConfig cfg;
-			cfg.SizePixels = 13 * scale;
+			cfg.SizePixels = 13 * gui_scale;
 			scaled_font = ImGui::GetIO().Fonts->AddFontDefault(&cfg);
 			ImGui::GetIO().Fonts->Build();
 			ImGui_ImplOpenGL3_CreateFontsTexture();
-			old_scale = scale;
-			ImGui::GetStyle().ScaleAllSizes(scale / old_scale);
+			old_scale = gui_scale;
+			ImGui::GetStyle().ScaleAllSizes(gui_scale / old_scale);
 
 			rebuild_scaled_font = false;
 			force_redraw();
@@ -544,20 +776,65 @@ static int run_gui(const char *url)
 
 		ImVec2 topleft = ImGui::GetCursorScreenPos();
 		ImVec2 avail = ImGui::GetContentRegionAvail();
-		avail.x -= 2 * ImGui::GetStyle().WindowPadding.x;
 
 		pthread_mutex_lock(&mtx);
 
+		if (replay) {
+			const int n_replay = (int)replay_commands.size() - 1;
+
+			ImGui::SameLine();
+			ImGui::Text("Replaying: %s", url);
+			ImGui::SameLine();
+			ImGui::Text("Up to:");
+			ImGui::SameLine();
+			ImGui::BeginDisabled(current_replay == 0);
+			ImGui::SameLine();
+			if (ImGui::ArrowButton("left", ImGuiDir_Left)) {
+					/* Destroy everything, and replay again. */
+					reset_before_replay(asics);
+					current_replay--;
+					replay_up_to(url, asics, replay_commands, current_replay);
+			}
+			ImGui::EndDisabled();
+			ImGui::BeginDisabled(current_replay >= n_replay);
+			ImGui::SameLine();
+			if (ImGui::ArrowButton("rt", ImGuiDir_Right)) {
+					/* Destroy everything, and replay again. */
+					reset_before_replay(asics);
+					current_replay++;
+					replay_up_to(url, asics, replay_commands, current_replay);
+			}
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			char label[256];
+			sprintf(label, "%d/%d (%s)", current_replay, n_replay, replay_commands[current_replay].c_str());
+			float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 10;
+			ImGui::SetNextItemWidth(w);
+			if (ImGui::BeginCombo("", label)) {
+				for (int i = 0; i <= n_replay; i++) {
+					sprintf(label, "%d/%d (%s)", i, n_replay, replay_commands[i].c_str());
+					if (ImGui::Selectable(label, i == current_replay) && current_replay != i) {
+						/* Destroy everything, and replay again. */
+						reset_before_replay(asics);
+						current_replay = i;
+						replay_up_to(url, asics, replay_commands, current_replay);
+					}
+				}
+				ImGui::EndCombo();
+			}
+		}
+
 		ImGui::SetNextItemWidth(avail.x / 16);
-		if (ImGui::SliderFloat("scale", &scale, 1, 2, "%.1f")) {
-			if (scale < 1)
-				scale = 1;
-			if (scale > 2)
-				scale = 2;
+		if (ImGui::SliderFloat("scale", &gui_scale, 1, 2, "%.1f")) {
+			if (gui_scale < 1)
+				gui_scale = 1;
+			if (gui_scale > 2)
+				gui_scale = 2;
 
 			rebuild_scaled_font = true;
 		}
 		ImGui::SameLine();
+
 		ImGui::BeginTabBar("asics", ImGuiTabBarFlags_FittingPolicyScroll);
 
 		if (asics.empty()) {
@@ -634,12 +911,20 @@ static int run_gui(const char *url)
 				ImGui::EndTabItem();
 			}
 
+			if (ImGui::BeginTabItem("Buffer #b58900O#ffffffjects", NULL, kb_shortcut(SDLK_o) ? ImGuiTabItemFlags_SetSelected : 0)) {
+				if (data.panels[9]->display(dt, avail, can_send_request))
+					need_auto_refresh = -1;
+				ImGui::EndTabItem();
+			}
+
 			ImGui::EndTabBar();
 			ImGui::EndTabItem();
 		}
 		ImGui::EndTabBar();
 
-		if (!pending_request.empty()) {
+		if (replay) {
+			/* */
+		} else if (!pending_request.empty()) {
 			avail.x += 2 * ImGui::GetStyle().WindowPadding.x;
 			ImVec2 c(avail.x - 10, topleft.y);
 			ImGui::SetCursorScreenPos(c);
@@ -661,13 +946,18 @@ static int run_gui(const char *url)
 		glClear(GL_COLOR_BUFFER_BIT);
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 		SDL_GL_SwapWindow(window);
+
+		if (clear_goto_tab_flag)
+			goto_tab_on_next_redraw = -1;
+		else if (goto_tab_on_next_redraw != -1)
+			clear_goto_tab_flag = true;
 	}
 
 	pthread_mutex_lock(&mtx);
 	pthread_cond_signal(&cond);
 	pthread_mutex_unlock(&mtx);
 
-#if UMR_GUI_REMOTE
+#if UMR_SERVER
 	if (lnk.use_sock) {
 		nn_shutdown(lnk.sock, lnk.endpoint);
 		nn_close(lnk.sock);
@@ -685,7 +975,7 @@ static int run_gui(const char *url)
 	if (config_filename) {
 		FILE *f = fopen(config_filename, "w");
 		if (f) {
-			fprintf(f, "ui_scale=%.1f\n", scale);
+			fprintf(f, "ui_scale=%.1f\n", gui_scale);
 			fclose(f);
 		}
 	}
@@ -707,6 +997,9 @@ SyntaxHighlighter::~SyntaxHighlighter() {
 	free (pmatch);
 	free (output);
 	for (Def& def: definitions) {
+		for (int i = 0; i < def.preg.re_nsub; i++) {
+			free((void*)def.colors[i]);
+		}
 		regfree(&def.preg);
 	}
 }
@@ -748,7 +1041,6 @@ char * SyntaxHighlighter::transform(const char *in) {
 		int write_cursor = 0;
 		int size = strlen(input);
 		int end = 0;
-		bool one_match = false;
 		while (true) {
 			if ((regexec(&def.preg, &input[read_cursor], def.preg.re_nsub + 1, pmatch, 0) == REG_NOMATCH) ||
 				(pmatch[0].rm_so == -1))

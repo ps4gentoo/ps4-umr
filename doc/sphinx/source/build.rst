@@ -80,7 +80,7 @@ At this point umr should be installed and can be invoked by running the command 
 Optional Packages
 -----------------
 
-You may disable the GUI mode by adding UMR_NO_GUI to your shell environment:
+The GUI mode and its serverside counterpart can be disabled or build individually using the UMR_NO_GUI and UMR_NO_SERVER options, e.g.:
 
 ::
 

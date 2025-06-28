@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,6 +25,14 @@
 #include "umr.h"
 #include <inttypes.h>
 
+/**
+ * umr_get_ip_revision - Return the version number attached to an IPname
+ *
+ * @asic: The ASIC to search for the IP block
+ * @ipname: The IP name to partial match
+ *
+ * Returns the version number attached to the IP name or 0 if not found.
+ */
 uint32_t umr_get_ip_revision(struct umr_asic *asic, const char *ipname)
 {
 	int x;

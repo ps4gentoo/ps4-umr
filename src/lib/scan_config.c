@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -131,17 +131,95 @@ static uint64_t read_int_drm(int cardno, char *fname)
 }
 
 /**
- * umr_scan_config - Scan the debugfs configuration data
+ * @brief Parse GCA (Graphics Core Architecture) configuration data.
+ *
+ * This function parses the Graphics Core Architecture (GCA) configuration data stored in the `asic` structure.
+ * It determines the version of the configuration data and calls the appropriate parsing function (`parse_rev0`, `parse_rev1`, etc.)
+ * to populate the `asic->config.gfx` fields with the relevant information.
+ *
+ * @param asic Pointer to the `umr_asic` structure containing the GCA configuration data to be parsed.
+ */
+void umr_scan_config_gca_data(struct umr_asic *asic)
+{
+	int r = 0;
+	switch (asic->config.data[0]) {
+		case 0: parse_rev0(asic, asic->config.data, &r);
+			break;
+		case 1: parse_rev1(asic, asic->config.data, &r);
+			break;
+		case 2: parse_rev2(asic, asic->config.data, &r);
+			break;
+		case 3: parse_rev3(asic, asic->config.data, &r);
+			break;
+		case 4: parse_rev4(asic, asic->config.data, &r);
+			break;
+		case 5: parse_rev5(asic, asic->config.data, &r);
+			break;
+		default:
+			asic->err_msg("Invalid or unknown GCA config data header version:%d\n",
+				      asic->config.data[0]);
+	}
+}
+
+/**
+ * @brief Scan the debugfs configuration data for an ASIC.
+ *
+ * This function reads various configuration details from the debugfs files of a given ASIC,
+ * including memory sizes, XGMI information, VBIOS version, firmware information, and GCA (Graphics Core Architecture) configuration data.
+ * It populates the provided `asic` structure with this information.
+ *
+ * @param asic Pointer to the `umr_asic` structure that will be populated with configuration data.
+ * @param xgmi_scan Flag indicating whether to scan the XGMI hive database to see if this device fits in.
+ *
+ * @return Returns 0 on success, or -1 on error.
  */
 int umr_scan_config(struct umr_asic *asic, int xgmi_scan)
 {
-	uint32_t data[512];
 	FILE *f;
 	char fname[256];
 	int r;
 
-	if (asic->options.no_kernel)
+	if (asic->options.no_kernel) {
+		struct umr_ip_block *ip;
+
+		ip = umr_find_ip_block(asic, "gfx", asic->options.vm_partition);
+		if (!ip) {
+			asic->err_msg("[BUG]: Cannot find a 'gfx' IP block in this ASIC\n");
+			return -1;
+		}
+
+		switch (ip->discoverable.maj) {
+			case 6:
+				asic->family = FAMILY_CIK;
+				asic->config.gfx.family = 0;
+				break;
+			case 7:
+				asic->family = FAMILY_SI;
+				asic->config.gfx.family = 120;
+				break;
+			case 8:
+				asic->family = FAMILY_VI;
+				asic->config.gfx.family = 130;
+				break;
+			case 9:
+				asic->family = FAMILY_AI;
+				asic->config.gfx.family = 141;
+				break;
+			case 10:
+				asic->family = FAMILY_NV;
+				asic->config.gfx.family = 143;
+				break;
+			case 11:
+				asic->family = FAMILY_GFX11;
+				asic->config.gfx.family = 145;
+				break;
+			case 12:
+				asic->family = FAMILY_GFX12;
+				break;
+		}
+
 		return -1;
+	}
 
 	// don't read config if virtual and not using a test vector
 	if (!asic->options.test_log && asic->options.is_virtual)
@@ -219,14 +297,14 @@ int umr_scan_config(struct umr_asic *asic, int xgmi_scan)
 gca_config:
 	if (asic->options.test_log && !asic->options.test_log_fd) {
 		// grab from test harness instead of system
-		r = umr_test_harness_get_config_data(asic, (uint8_t *)data);
+		umr_test_harness_get_config_data(asic, (uint8_t *)asic->config.data);
 	} else {
 		// grab from system
 		snprintf(fname, sizeof(fname)-1, "/sys/kernel/debug/dri/%d/amdgpu_gca_config", asic->instance);
 		f = fopen(fname, "rb");
 		if (!f)
 			return -1;
-		r = fread(data, 1, sizeof(data), f);
+		r = fread(asic->config.data, 1, sizeof(asic->config.data), f);
 		fclose(f);
 		if (r < 0)
 			return -1;
@@ -234,7 +312,7 @@ gca_config:
 		// store in test vector if open
 		if (asic->options.test_log && asic->options.test_log_fd) {
 			int x;
-			uint8_t *d = (uint8_t *)data;
+			uint8_t *d = (uint8_t *)asic->config.data;
 			fprintf(asic->options.test_log_fd, "GCACONFIG = { ");
 			for (x = 0; x < r; x++) {
 				fprintf(asic->options.test_log_fd, "%02"PRIx8, d[x]);
@@ -243,28 +321,13 @@ gca_config:
 		}
 	}
 
-	switch (data[0]) {
-		case 0: parse_rev0(asic, data, &r);
-			break;
-		case 1: parse_rev1(asic, data, &r);
-			break;
-		case 2: parse_rev2(asic, data, &r);
-			break;
-		case 3: parse_rev3(asic, data, &r);
-			break;
-		case 4: parse_rev4(asic, data, &r);
-			break;
-		case 5: parse_rev5(asic, data, &r);
-			break;
-		default:
-			asic->err_msg("Invalid or unknown GCA config data header version:%d\n",
-				      data[0]);
-			return -1;
-	}
+	umr_scan_config_gca_data(asic);
 
 	if (asic->family == FAMILY_CONFIGURE) {
 		asic->was_ip_discovered = 1;
-		if (asic->config.gfx.family >= 143) {
+		if (asic->config.gfx.family >= 145) {
+			asic->family = FAMILY_GFX11;
+		} else if (asic->config.gfx.family >= 143) {
 			asic->family = FAMILY_NV;
 		} else if (asic->config.gfx.family >= 141) {
 			asic->family = FAMILY_AI;

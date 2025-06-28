@@ -60,9 +60,20 @@ to the following structure:
 
 ::
 
+	struct umr_wave_status {
+		struct {
+			uint32_t
+				busy,
+				wave_level;
+		} sq_info;
+
+		uint32_t reg_values[64];
+	};
+
 	struct umr_wave_data {
-		uint32_t vgprs[64 * 256], sgprs[1024];
+		uint32_t vgprs[64 * 256], sgprs[1024], num_threads;
 		int se, sh, cu, simd, wave, have_vgprs;
+		const char **reg_names;
 		struct umr_wave_status ws;
 		struct umr_wave_thread *threads;
 		struct umr_wave_data *next;

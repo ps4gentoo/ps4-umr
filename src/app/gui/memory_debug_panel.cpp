@@ -39,19 +39,20 @@ public:
 		free(vram_content);
 	}
 
-	void process_server_message(JSON_Object *request, JSON_Value *answer) {
+	void process_server_message(JSON_Object *response, void *raw_data, unsigned raw_data_size) {
+		JSON_Value *error = json_object_get_value(response, "error");
+		if (error)
+			return;
+
+		JSON_Object *request = json_object(json_object_get_value(response, "request"));
+		JSON_Value *answer = json_object_get_value(response, "answer");
 		const char *command = json_object_get_string(request, "command");
 
 		if (!strcmp(command, "vm-decode") || !strcmp(command, "vm-read")) {
-			JSON_Array *values = json_array(json_object_get_value(json_object(answer), "values"));
-			if (values) {
-				int s = json_array_get_count(values);
-				vram_content = (uint64_t*) realloc(vram_content, s * sizeof(uint64_t));
-
-				for (int k = 0; k < s; k++) {
-					vram_content[k] = json_array_get_number(values, k);
-				}
-				valid_content_size = s * sizeof(uint64_t);
+			if (raw_data_size) {
+				vram_content = realloc(vram_content, raw_data_size);
+				memcpy(vram_content, raw_data, raw_data_size);
+				valid_content_size = raw_data_size;
 			}
 
 			JSON_Array *pt = json_array(json_object_get_value(json_object(answer), "page_table"));
@@ -183,7 +184,7 @@ private:
 	}
 
 private:
-	uint64_t *vram_content;
+	void *vram_content;
 	char vram_address[32];
 	int vram_size;
 	int vmid;

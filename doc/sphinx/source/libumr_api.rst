@@ -13,6 +13,7 @@ libumrcore.a: API Documentation
    libhalt_waves
    libwave_status
    libshader_disasm
+   libpacket_api
    libpm4_stream
    libsdma_stream
    libih_decode

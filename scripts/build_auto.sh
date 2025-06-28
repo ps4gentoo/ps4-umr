@@ -1,13 +1,24 @@
 #!/bin/bash
 make -C ../comp/
+if [ -e ../database/ip/md5s ]; then
+	rm -rf ../database/ip/md5s
+fi
+mkdir -p ../database/ip/md5s/
 
 parse_reg_bits() {
 	suf=""
 	if [ -e ${pk}/include/asic_reg/$1_offset.h ]; then suf="offset"; fi
 	if [ -e ${pk}/include/asic_reg/$1_d.h ]; then suf="d"; export UMR_NO_SOC15=1; fi
-	if [ "${suf}" != "" ]; then
-		../comp/compiler ${pk}/include/asic_reg/$1_${suf}.h ${pk}/include/asic_reg/$1_sh_mask.h > ../database/ip/$2
+	md5=`cat ${pk}/include/asic_reg/$1_${suf}.h ${pk}/include/asic_reg/$1_sh_mask.h | md5sum | awk '{ print $1; }'`
+	if [ -e ../database/ip/${md5}.chk ]; then
+		echo "skipping $1..."
+	else
+		echo "processing $1..."
+		if [ "${suf}" != "" ]; then
+			../comp/compiler ${pk}/include/asic_reg/$1_${suf}.h ${pk}/include/asic_reg/$1_sh_mask.h > ../database/ip/$2
+		fi
 	fi
+	touch ../database/ip/md5s/${md5}.chk
 	unset UMR_NO_SOC15
 }
 
@@ -35,9 +46,16 @@ for f in ${pk}/include/asic_reg/*/*_offset.h ${pk}/include/asic_reg/*/*_d.h; do
 	fi
 
 	if [ -e ${smnname} ]; then
-		cat ${smnname} ${f} > /tmp/delme.h
-		../comp/compiler /tmp/delme.h `echo ${f} | sed -e 's/_d/_sh_mask/' -e 's/_offset/_sh_mask/'` > ../database/ip/${ipname}_${outrevname}.reg
-		rm -f /tmp/delme.h
+		md5=`cat ${smnname} ${f} ${basename}_sh_mask.h | md5sum | awk '{ print $1; }'`
+		if [ -e ../database/ip/${md5}.chk ]; then
+			echo "skipping $f..."
+		else
+			echo "processing $f..."
+			cat ${smnname} ${f} > /tmp/delme.h
+			../comp/compiler /tmp/delme.h `echo ${f} | sed -e 's/_d/_sh_mask/' -e 's/_offset/_sh_mask/'` > ../database/ip/${ipname}_${outrevname}.reg
+			rm -f /tmp/delme.h
+		fi
+		touch ../database/ip/md5s/${md5}.chk
 	else
 		parse_reg_bits ${dirname}/${ipname}_${revname} ${ipname}_${outrevname}.reg
 	fi
@@ -63,4 +81,9 @@ for f in ${pk}/include/*ip_offset.h; do
 done
 echo "Parsed ${x} IP offset files..."
 
+rm -vf ../database/ip/gc_9_4_1.reg
+
 make -C ../comp clean
+rm -rf ../database/ip/*.chk
+mv -vf ../database/ip/md5s/*.chk ../database/ip/
+rm -rf ../database/ip/md5s

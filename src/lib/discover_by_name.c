@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -59,13 +59,12 @@ struct umr_asic *umr_discover_asic_by_name(struct umr_options *options, char *na
 		return NULL;
 	}
 
-
 	if (asic) {
 		asic->did = 0;
 		if (options->instance == -1) {
 			// try and discover an instance that works
 			struct umr_options tmp_opt;
-			for (x = 0; x < 16; x++) {
+			for (x = 0; x < 128; x++) {
 				memset(&tmp_opt, 0, sizeof(tmp_opt));
 				tmp_opt.quiet = 1;
 				tmp_opt.forcedid = -1;

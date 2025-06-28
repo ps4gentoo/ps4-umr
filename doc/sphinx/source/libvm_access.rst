@@ -22,14 +22,18 @@ address is considered a physical address and the VRAM is read
 directly.  
 
 The 'vm_partition' parameter indicates which VM partition to use when
-decoding a GPUVM space.   '-1' is the default for all existing ASICs.
+decoding a GPUVM space.  '-1' is the default for all existing ASICs.
 Future ASICs may have multiple GC or MMHUB (or other) blocks which
 means they will need to be indicated here.  The value is used to modify
 the name of the IP block being searched for.
 
 The scheme in umr for multiple blocks is to use {} braces with a number.
 For instance, 'clk{0}' refers to the 0'th instance of a CLK IP block, whereas,
-'clk{3}' would refer to the fourth instance.
+'clk{3}' would refer to the fourth instance.  Note that in an ASIC with
+a single IP block the {} braces are omitted, e.g., 'clk' not 'clk{0}'.
+
+
+Example usage:
 
 ::
 

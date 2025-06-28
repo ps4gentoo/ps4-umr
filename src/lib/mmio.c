@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -28,8 +28,12 @@
  * umr_read_reg_by_name - Read a register by name
  *
  * Reads the value of a register with a specified @name from the first
- * IP block found to contain the register.  To specify an IP block
+ * IP block found to contain the register. To specify an IP block,
  * use: umr_read_reg_by_name_by_ip().
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param name Name of the register to read.
+ * @return The value of the register or 0 if not found.
  */
 uint64_t umr_read_reg_by_name(struct umr_asic *asic, char *name)
 {
@@ -40,8 +44,13 @@ uint64_t umr_read_reg_by_name(struct umr_asic *asic, char *name)
  * umr_read_reg_by_name_by_ip - Read a register by name and IP block
  *
  * Reads the value of a register with a specified @name in a specified
- * @ip block.  The IP block can be NULL to find the first instance
+ * @ip block. The IP block can be NULL to find the first instance
  * of the register in the ASIC.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param name Name of the register to read.
+ * @return The value of the register or 0 if not found.
  */
 uint64_t umr_read_reg_by_name_by_ip(struct umr_asic *asic, char *ip, char *name)
 {
@@ -49,12 +58,17 @@ uint64_t umr_read_reg_by_name_by_ip(struct umr_asic *asic, char *ip, char *name)
 }
 
 /**
- * umr_read_reg_by_name_by_ip_by_instance - Read a register by
- * name and IP block and instance.
+ * umr_read_reg_by_name_by_ip_by_instance - Read a register by name and IP block and instance
  *
  * Reads the value of a register with a specified @name in the specified
- * @inst instance of the @ip block.  The IP block can be NULL to
- * find the first instance of the register in the ASIC.
+ * @inst instance of the @ip block. The IP block can be NULL to find the first
+ * instance of the register in the ASIC.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param inst Instance number of the IP block.
+ * @param name Name of the register to read.
+ * @return The value of the register or 0 if not found.
  */
 uint64_t umr_read_reg_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip, int inst, char *name)
 {
@@ -74,23 +88,34 @@ uint64_t umr_read_reg_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip,
 /**
  * umr_write_reg_by_name_by_ip - Write to a register by name and IP block
  *
- * Writes the @value specified to the regisrer with a specified @name in
- * a specified @ip block.  The IP block can be NULL to find the
- * first instance of the register in the ASIC.
+ * Writes the @value specified to the register with a specified @name in
+ * a specified @ip block. The IP block can be NULL to find the first instance
+ * of the register in the ASIC.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param name Name of the register to write.
+ * @param value Value to write to the register.
+ * @return 0 on success, non-zero on failure.
  */
 int umr_write_reg_by_name_by_ip(struct umr_asic *asic, char *ip, char *name, uint64_t value)
 {
 	return umr_write_reg_by_name_by_ip_by_instance(asic, ip, -1, name, value);
 }
 
-
 /**
- * umr_write_reg_by_name_by_ip_by_instance - Write to a register by
- * name and IP block and instance.
+ * umr_write_reg_by_name_by_ip_by_instance - Write to a register by name and IP block and instance
  *
- * Writes the @value specified to the regisrer with a specified @name in
- * the specified @inst instance of an @ip block.  The IP block can be
- * NULL to find the first instance of the register in the ASIC.
+ * Writes the @value specified to the register with a specified @name in
+ * the specified @inst instance of an @ip block. The IP block can be NULL
+ * to find the first instance of the register in the ASIC.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param inst Instance number of the IP block.
+ * @param name Name of the register to write.
+ * @param value Value to write to the register.
+ * @return 0 on success, non-zero on failure.
  */
 int umr_write_reg_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip, int inst, char *name, uint64_t value)
 {
@@ -116,24 +141,33 @@ int umr_write_reg_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip, int
  * umr_write_reg_by_name - Write to a register by name
  *
  * Writes the @value specified to the register with a specified @name
- * from the first IP block found to contain the register.  To specify
- * an IP block use: umr_write_reg_by_name_by_ip().
+ * from the first IP block found to contain the register. To specify an IP
+ * block use: umr_write_reg_by_name_by_ip().
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param name Name of the register to write.
+ * @param value Value to write to the register.
+ * @return 0 on success, non-zero on failure.
  */
 int umr_write_reg_by_name(struct umr_asic *asic, char *name, uint64_t value)
 {
 	return umr_write_reg_by_name_by_ip(asic, NULL, name, value);
 }
 
-
 /**
- * umr_bitslice_reg_quiet - Slice a register value by a bitfield
+ * umr_bitslice_reg_quiet - Slice a register value by a bitfield (quiet version)
  *
- * Returns the value of a bitfield of a register specified by
- * @reg by the bitfield parameters specified by the name @bitname.
- * The entire register value must be specified by @regvalue.
+ * Returns the value of a bitfield of a register specified by @reg by the bitfield parameters
+ * specified by the name @bitname. The entire register value must be specified by @regvalue.
  *
- * This function will return 2^32 - 1 if the register is not found
- * so it cannot be used for bitfields that are a full 32-bits wide
+ * This function will return 2^32 - 1 if the register is not found, so it cannot be used for
+ * bitfields that are a full 32-bits wide.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param reg Pointer to the register structure.
+ * @param bitname Name of the bitfield to slice.
+ * @param regvalue The entire value of the register.
+ * @return The value of the specified bitfield or 0xFFFFFFFFULL if not found.
  */
 uint64_t umr_bitslice_reg_quiet(struct umr_asic *asic, struct umr_reg *reg, char *bitname, uint64_t regvalue)
 {
@@ -152,9 +186,14 @@ uint64_t umr_bitslice_reg_quiet(struct umr_asic *asic, struct umr_reg *reg, char
 /**
  * umr_bitslice_reg - Slice a register value by a bitfield
  *
- * Returns the value of a bitfield of a register specified by
- * @reg by the bitfield parameters specified by the name @bitname.
- * The entire register value must be specified by @regvalue.
+ * Returns the value of a bitfield of a register specified by @reg by the bitfield parameters
+ * specified by the name @bitname. The entire register value must be specified by @regvalue.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param reg Pointer to the register structure.
+ * @param bitname Name of the bitfield to slice.
+ * @param regvalue The entire value of the register.
+ * @return The value of the specified bitfield or 0 if not found, and logs an error message.
  */
 uint64_t umr_bitslice_reg(struct umr_asic *asic, struct umr_reg *reg, char *bitname, uint64_t regvalue)
 {
@@ -173,10 +212,15 @@ uint64_t umr_bitslice_reg(struct umr_asic *asic, struct umr_reg *reg, char *bitn
 /**
  * umr_bitslice_compose_value - Shift a value into position for a bitfield
  *
- * Masks and shifts a value @regvalue specified for the bitfield
- * indicated by @bitname for the register @reg.  The returned
- * value can be OR'ed with other composed values to complete an
- * entire register word.
+ * Masks and shifts a value @regvalue specified for the bitfield indicated by @bitname for
+ * the register @reg. The returned value can be OR'ed with other composed values to complete
+ * an entire register word.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param reg Pointer to the register structure.
+ * @param bitname Name of the bitfield to compose.
+ * @param regvalue The value to shift and mask for the bitfield.
+ * @return The masked and shifted bitfield value or 0 if not found, and logs an error message.
  */
 uint64_t umr_bitslice_compose_value(struct umr_asic *asic, struct umr_reg *reg, char *bitname, uint64_t regvalue)
 {
@@ -193,7 +237,17 @@ uint64_t umr_bitslice_compose_value(struct umr_asic *asic, struct umr_reg *reg, 
 }
 
 /**
- * umr_bitslice_reg_by_name_by_ip - Slice out a bitfield by IP and register name.
+ * umr_bitslice_reg_by_name_by_ip - Slice out a bitfield by IP and register name
+ *
+ * Finds the register specified by @regname in the IP block @ip and slices the bitfield
+ * specified by @bitname from the provided @regvalue.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param regname Name of the register to slice.
+ * @param bitname Name of the bitfield to slice.
+ * @param regvalue The entire value of the register.
+ * @return The value of the specified bitfield or 0 if not found, and logs an error message.
  */
 uint64_t umr_bitslice_reg_by_name_by_ip(struct umr_asic *asic, char *ip, char *regname, char *bitname, uint64_t regvalue)
 {
@@ -206,7 +260,39 @@ uint64_t umr_bitslice_reg_by_name_by_ip(struct umr_asic *asic, char *ip, char *r
 }
 
 /**
- * umr_bitslice_reg_by_name - Slice out a bitfield by register name.
+ * umr_bitslice_reg_by_name_by_ip_by_instance - Slice out a bitfield by IP and register name
+ *
+ * Finds the register specified by @regname in the instance @instance of the IP block @ip
+ * and slices the bitfield specified by @bitname from the provided @regvalue.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param instance Instance number of the IP block.
+ * @param regname Name of the register to slice.
+ * @param bitname Name of the bitfield to slice.
+ * @param regvalue The entire value of the register.
+ * @return The value of the specified bitfield or 0 if not found, and logs an error message.
+ */
+uint64_t umr_bitslice_reg_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip, int instance, char *regname, char *bitname, uint64_t regvalue)
+{
+	struct umr_reg *reg;
+	reg = umr_find_reg_data_by_ip_by_instance(asic, ip, instance, regname);
+	if (reg)
+		return umr_bitslice_reg(asic, reg, bitname, regvalue);
+	else
+		return 0;
+}
+
+/**
+ * @brief Slice out a bitfield by register name.
+ *
+ * Finds the register specified by @regname and slices the bitfield specified by @bitname from the provided @regvalue.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param regname Name of the register to slice.
+ * @param bitname Name of the bitfield to slice.
+ * @param regvalue The entire value of the register.
+ * @return The value of the specified bitfield or 0 if not found, and logs an error message.
  */
 uint64_t umr_bitslice_reg_by_name(struct umr_asic *asic, char *regname, char *bitname, uint64_t regvalue)
 {
@@ -214,15 +300,19 @@ uint64_t umr_bitslice_reg_by_name(struct umr_asic *asic, char *regname, char *bi
 }
 
 /**
- * umr_bitslice_compose_value_by_name_by_ip - Compose a bitfield
+ * @brief Compose a bitfield by name and IP
  *
- * Compose a bitfield with the specified @regvalue value for the
- * bitfield named @bitname in the register @regname in the IP block
- * @ip.  The @ip name can be NULL to search for the first matching
- * register in the ASIC.
+ * Composes a bitfield with the specified @regvalue value for the bitfield named @bitname in the register @regname in the IP block @ip.
+ * The @ip name can be NULL to search for the first matching register in the ASIC.
  *
- * Returns the masked and shifted bitfield value that can be OR'ed
- * with other composed bitfields to form a register value.
+ * Returns the masked and shifted bitfield value that can be OR'ed with other composed bitfields to form a register value.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param regname Name of the register to compose.
+ * @param bitname Name of the bitfield to compose.
+ * @param regvalue The value to shift and mask for the bitfield.
+ * @return The masked and shifted bitfield value or 0 if not found, and logs an error message.
  */
 uint64_t umr_bitslice_compose_value_by_name_by_ip(struct umr_asic *asic, char *ip, char *regname, char *bitname, uint64_t regvalue)
 {
@@ -235,13 +325,43 @@ uint64_t umr_bitslice_compose_value_by_name_by_ip(struct umr_asic *asic, char *i
 }
 
 /**
- * umr_bitslice_compose_value_by_name - Compose a bitfield
+ * @brief Compose a bitfield by name, IP, and instance
  *
- * Compose a bitfield with the specified @regvalue value for the
- * bitfield named @bitname in the register @regname.
+ * Composes a bitfield with the specified @regvalue value for the bitfield named @bitname in the register @regname in the IP block @ip.
+ * The @ip name can be NULL to search for the first matching register in the ASIC. The @instance specifies the instance number of the IP block.
  *
- * Returns the masked and shifted bitfield value that can be OR'ed
- * with other composed bitfields to form a register value.
+ * Returns the masked and shifted bitfield value that can be OR'ed with other composed bitfields to form a register value.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param ip Name of the IP block or NULL for any IP block.
+ * @param instance Instance number of the IP block.
+ * @param regname Name of the register to compose.
+ * @param bitname Name of the bitfield to compose.
+ * @param regvalue The value to shift and mask for the bitfield.
+ * @return The masked and shifted bitfield value or 0 if not found, and logs an error message.
+ */
+uint64_t umr_bitslice_compose_value_by_name_by_ip_by_instance(struct umr_asic *asic, char *ip, int instance, char *regname, char *bitname, uint64_t regvalue)
+{
+	struct umr_reg *reg;
+	reg = umr_find_reg_data_by_ip_by_instance(asic, ip, instance, regname);
+	if (reg)
+		return umr_bitslice_compose_value(asic, reg, bitname, regvalue);
+	else
+		return 0;
+}
+
+/**
+ * @brief Compose a bitfield by name
+ *
+ * Composes a bitfield with the specified @regvalue value for the bitfield named @bitname in the register @regname.
+ *
+ * Returns the masked and shifted bitfield value that can be OR'ed with other composed bitfields to form a register value.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param regname Name of the register to compose.
+ * @param bitname Name of the bitfield to compose.
+ * @param regvalue The value to shift and mask for the bitfield.
+ * @return The masked and shifted bitfield value or 0 if not found, and logs an error message.
  */
 uint64_t umr_bitslice_compose_value_by_name(struct umr_asic *asic, char *regname, char *bitname, uint64_t regvalue)
 {
@@ -249,10 +369,15 @@ uint64_t umr_bitslice_compose_value_by_name(struct umr_asic *asic, char *regname
 }
 
 /**
- * umr_grbm_select_index - Select a GRBM instance
+ * @brief Select a GRBM instance
  *
- * Selects via MMIO writes a specific GRBM instance by passing the
- * kernel's control.
+ * Selects via MMIO writes a specific GRBM instance by passing the kernel's control.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param se SE index or 0xFFFFFFFFUL for broadcast.
+ * @param sh SH index or 0xFFFFFFFFUL for broadcast.
+ * @param instance Instance index or 0xFFFFFFFFUL for broadcast.
+ * @return 0 on success, non-zero on failure.
  */
 int umr_grbm_select_index(struct umr_asic *asic, uint32_t se, uint32_t sh, uint32_t instance)
 {
@@ -260,7 +385,7 @@ int umr_grbm_select_index(struct umr_asic *asic, uint32_t se, uint32_t sh, uint3
 	uint32_t data = 0;
 	int bank, r;
 
-	grbm_idx = umr_find_reg_data(asic, "mmGRBM_GFX_INDEX");
+	grbm_idx = umr_find_reg_by_name(asic, "mmGRBM_GFX_INDEX", NULL);
 	if (grbm_idx) {
 		if (instance == 0xFFFFFFFFUL) {
 			data |= umr_bitslice_compose_value(asic, grbm_idx, "INSTANCE_BROADCAST_WRITES", 1);
@@ -295,6 +420,18 @@ int umr_grbm_select_index(struct umr_asic *asic, uint32_t se, uint32_t sh, uint3
 	}
 }
 
+/**
+ * @brief Select an SRBM instance
+ *
+ * Selects via MMIO writes a specific SRBM instance by passing the kernel's control.
+ *
+ * @param asic Pointer to the ASIC structure.
+ * @param me ME index.
+ * @param pipe Pipe index.
+ * @param queue Queue index.
+ * @param vmid VMID (Virtual Memory Identifier).
+ * @return 0 on success, non-zero on failure.
+ */
 int umr_srbm_select_index(struct umr_asic *asic, uint32_t me, uint32_t pipe, uint32_t queue, uint32_t vmid)
 {
 	struct umr_reg *srbm_idx;
@@ -302,9 +439,9 @@ int umr_srbm_select_index(struct umr_asic *asic, uint32_t me, uint32_t pipe, uin
 	int bank, r;
 
 	if (asic->family >= FAMILY_AI)
-		srbm_idx = umr_find_reg_data(asic, "mmGRBM_GFX_CNTL");
+		srbm_idx = umr_find_reg_by_name(asic, "mmGRBM_GFX_CNTL", NULL);
 	else
-		srbm_idx = umr_find_reg_data(asic, "mmSRBM_GFX_CNTL");
+		srbm_idx = umr_find_reg_by_name(asic, "mmSRBM_GFX_CNTL", NULL);
 
 	if (srbm_idx) {
 		data |= umr_bitslice_compose_value(asic, srbm_idx, "PIPEID", pipe);

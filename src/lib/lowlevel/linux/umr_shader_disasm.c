@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,13 +29,19 @@
 #include <llvm-c/Target.h>
 
 /**
- * umr_shader_disasm - Diassemble a shader
+ * @brief Disassemble a shader program.
  *
- * @inst:  Shader program
- * @inst_bytes: number of bytes in shader
- * @PC:  Shader address in virtual memory
- * @disasm_text:	array of pointers that are assigned pointers
- *					to disassembled shader.
+ * This function takes a shader program and disassembles it into human-readable form.
+ * The disassembled instructions are stored in an array of strings, which is allocated
+ * by this function and must be freed by the caller.
+ *
+ * @param asic         Pointer to the UMR ASIC structure representing the GPU.
+ * @param inst         Pointer to the shader program bytes.
+ * @param inst_bytes   Number of bytes in the shader program.
+ * @param PC           Shader address in virtual memory.
+ * @param disasm_text  Output parameter: array of pointers to disassembled shader instructions.
+ *
+ * @return             0 on success, -1 on failure (e.g., out of memory).
  */
 int umr_shader_disasm(struct umr_asic *asic,
 		     uint8_t *inst, unsigned inst_bytes,
@@ -110,6 +116,15 @@ int umr_shader_disasm(struct umr_asic *asic,
 					break;
 				case 3:
 					cpuname = "gfx1103";
+					break;
+			}
+		} else if (gfx->discoverable.maj == 12) {
+			switch (gfx->discoverable.rev) {
+				case 0:
+					cpuname = "gfx1200";
+					break;
+				case 1:
+					cpuname = "gfx1201";
 					break;
 			}
 		}

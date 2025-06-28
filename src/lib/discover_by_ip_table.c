@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,6 +29,15 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+/**
+ * read_ip_block - Create and populate an IP block based on IP discovery/Database matching
+ *
+ * @asic: The ASIC the IP block is meant to be attached to
+ * @det: The IP discovery entry being parsed
+ * @nit: The database item matched to this block
+ *
+ * Returns a pointer to a umr_ip_block structure on success.
+ */
 static struct umr_ip_block *read_ip_block(struct umr_asic *asic, struct umr_discovery_table_entry *det, struct umr_database_scan_item *nit)
 {
 	FILE *f;
@@ -48,30 +57,42 @@ static struct umr_ip_block *read_ip_block(struct umr_asic *asic, struct umr_disc
 		return NULL;
 	}
 
+	// the first line has the number of registers
 	fgets(linebuf, sizeof(linebuf) - 1, f);
 	sscanf(linebuf, "%"SCNu32, &no_regs);
 	ip->no_regs = no_regs;
 	ip->regs = calloc(no_regs, sizeof(*(ip->regs)));
+
+	// copy over the IP discovery versioning to this IP block
+	// so we can have more precise versioning info since the database
+	// itself doesn't always have exact matches for IP versions.
 	ip->discoverable.die = det->die;
 	ip->discoverable.maj = det->maj;
 	ip->discoverable.min = det->min;
 	ip->discoverable.rev = det->rev;
 	ip->discoverable.instance = det->instance;
+	ip->discoverable.logical_inst = det->logical_inst;
 
-	// swap for common names
+	// swap for common names since some IP discovery names won't always
+	// match the IP header names
 	if (!strcmp(det->ipname, "gc")) {
 		strcpy(ipcmn, "gfx");
 	} else if (!strcmp(det->ipname, "uvd")) { // for any IP that has discovery UVD == VCN
 		strcpy(ipcmn, "vcn");
 	} else if (!strcmp(det->ipname, "dmu")) {
 		strcpy(ipcmn, "dcn");
+	} else if (!strcmp(det->ipname, "nbif")) {
+		strcpy(ipcmn, "nbio");
 	} else {
 		strcpy(ipcmn, det->ipname);
 	}
 
-	if (det->instance) {
+	// if this IP block has multiple instances then add a {$instance}
+	// string to the IP name
+	if (det->logical_inst > 0) {
 		char ipname[512];
-		snprintf(ipname, sizeof ipname - 1, "%s%d%d%d{%d}", ipcmn, det->maj, det->min, det->rev, det->instance);
+		snprintf(ipname, sizeof ipname - 1, "%s%d%d%d{%d}", ipcmn,
+				 det->maj, det->min, det->rev, det->logical_inst);
 		ip->ipname = strdup(ipname);
 	} else {
 		char ipname[512];
@@ -79,6 +100,7 @@ static struct umr_ip_block *read_ip_block(struct umr_asic *asic, struct umr_disc
 		ip->ipname = strdup(ipname);
 	}
 
+	// parse the IP database file for this block
 	x = 0;
 	while (fgets(linebuf, sizeof linebuf, f)) {
 		uint32_t y;
@@ -95,20 +117,24 @@ static struct umr_ip_block *read_ip_block(struct umr_asic *asic, struct umr_disc
 			int start, stop;
 		} bit_fields;
 
+		// parse the line which should return 6 fields
 		if (sscanf(linebuf, "%s %d 0x%"PRIx64" %"PRIu32" %"PRIu32" %"PRIu32,
 			reg_fields.name, &reg_fields.type, &reg_fields.addr,
 			&reg_fields.nobits, &reg_fields.is64, &reg_fields.idx) != 6) {
 				asic->err_msg("[ERROR]: Invalid regfile line [%s]\n", linebuf);
 		}
 
+		// populate this register slot for this IP block
 		ip->regs[x].regname = strdup(reg_fields.name);
 		ip->regs[x].type    = reg_fields.type;
 		ip->regs[x].addr    = reg_fields.addr;
+		// add the SOC15 segment offset for MMIO bound registers
 		if (ip->regs[x].type == REG_MMIO)
 			ip->regs[x].addr += det->segments[reg_fields.idx];
 		ip->regs[x].no_bits = reg_fields.nobits;
 		ip->regs[x].bit64   = reg_fields.is64;
 
+		// if this register has bitfields parse those as well
 		if (reg_fields.nobits) {
 			ip->regs[x].bits = calloc(reg_fields.nobits, sizeof(*(ip->regs[x].bits)));
 			for (y = 0; y < reg_fields.nobits; y++) {
@@ -126,23 +152,41 @@ static struct umr_ip_block *read_ip_block(struct umr_asic *asic, struct umr_disc
 	return ip;
 }
 
+/**
+ * dump_discovery_to_log - Dump the IP discovery table to a test harness log file
+ *
+ * @det: The discovery table
+ * @options: The ASIC options which contain the file handle for the test harness
+ */
 static void dump_discovery_to_log(struct umr_discovery_table_entry *det, struct umr_options *options)
 {
 	fprintf(options->test_log_fd, "DISCOVERY = { ");
 	while (det) {
 		int x;
 		for (x = 0; x < 128; x++) fprintf(options->test_log_fd, "%02" PRIx8, (unsigned)(det->ipname[x] & 0xFF));
-		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->die >> 8), (unsigned)(det->die));
-		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->instance >> 8), (unsigned)(det->instance));
-		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->maj >> 8), (unsigned)(det->maj));
-		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->min >> 8), (unsigned)(det->min));
-		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->rev >> 8), (unsigned)(det->rev));
-		for (x = 0; x < 16; x++) fprintf(options->test_log_fd, "%016" PRIx64, det->segments[x]);
+		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->die >> 8), (unsigned)(det->die & 0xFF));
+		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->instance >> 8), (unsigned)(det->instance & 0xFF));
+		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->maj >> 8), (unsigned)(det->maj & 0xFF));
+		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->min >> 8), (unsigned)(det->min & 0xFF));
+		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->rev >> 8), (unsigned)(det->rev & 0xFF));
+		fprintf(options->test_log_fd, "%02" PRIx8 "%02" PRIx8, (unsigned)(det->logical_inst >> 8) & 0xFF, (unsigned)(det->logical_inst & 0xFF));
+		for (x = 0; x < 32; x++) {
+			fprintf(options->test_log_fd, "%016" PRIx64, det->segments[x]);
+		}
 		det = det->next;
 	}
 	fprintf(options->test_log_fd, "}\n");
 }
 
+/**
+ * import_det_from_log - Import a IP Discovery table from a test harness log file
+ *
+ * @options: The ASIC that has the test harness file descriptor open
+ * @nblocks: Receives the numer of IP discovery blocks
+ *
+ * Returns a pointer to a umr_discovery_table_entry structure which
+ * contains the information necessary to recreate the ASIC model.
+ */
 static struct umr_discovery_table_entry *import_det_from_log(struct umr_options *options, int *nblocks)
 {
 	struct umr_discovery_table_entry *det, *pdet;
@@ -163,7 +207,11 @@ static struct umr_discovery_table_entry *import_det_from_log(struct umr_options 
 		det->maj = ((unsigned)data[0] << 8) | ((unsigned)data[1]);	data += 2;
 		det->min = ((unsigned)data[0] << 8) | ((unsigned)data[1]);	data += 2;
 		det->rev = ((unsigned)data[0] << 8) | ((unsigned)data[1]);	data += 2;
-		for (y = 0; y < 16; y++) {
+		det->logical_inst = ((unsigned)data[0] << 8) | ((unsigned)data[1]);	data += 2;
+		if (det->logical_inst & 0x8000) {
+			det->logical_inst -= 65536;
+		}
+		for (y = 0; y < 32; y++) {
 			for (z = 0; z < 8; z++)
 				det->segments[y] = (det->segments[y] << 8) | ((uint64_t)*data++);
 		}
@@ -190,9 +238,18 @@ static struct umr_discovery_table_entry *import_det_from_log(struct umr_options 
 	}
 }
 
+/**
+ * umr_discover_asic_by_discovery_table - Create an ASIC model based on the IP discovery tables
+ *
+ * @aname: What to call this ASIC
+ * @options: The ASIC options to bind to this model
+ * @errout: The desired error output callback
+ *
+ * Returns a pointer to a umr_asic structure on success
+ */
 struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_options *options, umr_err_output errout)
 {
-	struct umr_discovery_table_entry *det, *pdet;
+	struct umr_discovery_table_entry *det = NULL, *pdet = NULL;
 	struct umr_database_scan_item *it, *nit;
 	int numblocks, used_blocks, x, y;
 	struct umr_asic *asic;
@@ -212,8 +269,10 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 
 	// create discovery table
 	if (options->test_log && !options->test_log_fd) {
+		// import the table from the test harness log file
 		det = import_det_from_log(options, &numblocks);
 	} else {
+		// import the table from the sysfs tree
 		det = umr_parse_ip_discovery(options->instance, &numblocks, errout);
 	}
 
@@ -265,6 +324,8 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 			strcpy(cmnname, "vcn");
 		} else if (!strcmp(det->ipname, "dmu")) {
 			strcpy(cmnname, "dcn");
+		} else if (!strcmp(det->ipname, "nbif")) {
+			strcpy(cmnname, "nbio");
 		} else {
 			strcpy(cmnname, det->ipname);
 		}
@@ -286,8 +347,10 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 				errout("[VERBOSE]: Using %s/%s (%d.%d.%d) for %s (%d.%d.%d)\n",
 					nit->path, nit->fname, nit->maj, nit->min, nit->rev,
 					det->ipname, det->maj, det->min, det->rev);
-			asic->blocks[used_blocks++] = read_ip_block(asic, det, nit);
-		}
+                        if (!det->harvest)
+                                asic->blocks[used_blocks++] =
+                                    read_ip_block(asic, det, nit);
+                }
 		det = det->next;
 	}
 	asic->no_blocks = used_blocks - 1;
@@ -311,6 +374,7 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 		}
 	}
 
+	// optionally we can export the model we discovered as a static ASIC model
 	if (options->export_model) {
 		FILE *fexp;
 		struct export_data *ppexp;
@@ -321,7 +385,7 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 		snprintf(buf, sizeof(buf), "%s.soc15", asic->asicname);
 		fexp = fopen(buf, "w");
 		pexp_data = &exp_data;
-		while (pexp_data && strlen(pexp_data->det->ipname)) {
+		while (pexp_data && pexp_data->det && strlen(pexp_data->det->ipname)) {
 			if (!pexp_data->soc15) {
 				fprintf(fexp, "%s\n", pexp_data->det->ipname);
 				ppexp = pexp_data;
@@ -330,7 +394,7 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 					if (!ppexp->soc15 && !strcmp(pexp_data->det->ipname, ppexp->det->ipname)) {
 						ppexp->soc15 = 1;
 						fprintf(fexp, "\t");
-						for (x = 0; x < 8; x++) {
+						for (x = 0; x < 32; x++) {
 							fprintf(fexp, "0x%08" PRIx64 " ", ppexp->det->segments[x]);
 						}
 						fprintf(fexp, "\n");
@@ -341,7 +405,10 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 
 				// at this point we've output Z of 32 rows, so zero out the rest
 				for (; z < 32; z++) {
-					fprintf(fexp, "\t0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000\n");
+					fprintf(fexp, "\t0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 ");
+					fprintf(fexp, "0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 ");
+					fprintf(fexp, "0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 ");
+					fprintf(fexp, "0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000\n");
 				}
 			}
 			pexp_data = pexp_data->next;
@@ -373,8 +440,6 @@ struct umr_asic *umr_discover_asic_by_discovery_table(char *aname, struct umr_op
 			pexp_data = ppexp;
 		}
 	}
-
-
 
 done:
 	det = pdet;

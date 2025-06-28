@@ -153,6 +153,14 @@ enum TEST_RESULT test_can_read_from_vm_memory_direct17(struct umr_asic* asic)
     return TEST_SUCCESS;
 }
 
+// read three level page table, but with PDE0 as PTE
+enum TEST_RESULT test_can_read_from_vm_memory_direct18(struct umr_asic* asic)
+{
+    uint64_t read_data = 0;
+    ASSERT_SUCCESS(umr_read_vram(asic, -1, UMR_GFX_HUB|3, 0x7f8047e00000, sizeof(read_data), &read_data));
+    ASSERT_EQ(read_data, 0x0706050403020100);
+    return TEST_SUCCESS;
+}
 
 DEFINE_TESTS(vm_tests)
 #if 0
@@ -176,5 +184,6 @@ TEST(test_can_read_from_vm_memory_direct14, "direct_vm_test14.envdef", "polaris1
 TEST(test_can_read_from_vm_memory_direct15, "direct_vm_test15.envdef", "navi10"),
 TEST(test_can_read_from_vm_memory_direct16, "direct_vm_test16.envdef", "navi10"),
 TEST(test_can_read_from_vm_memory_direct17, "direct_vm_test17.envdef", "gfx11_vm_test"),
+TEST(test_can_read_from_vm_memory_direct18, "direct_vm_test18.envdef", "aldebaran"),
 #endif
 END_TESTS(vm_tests);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -33,6 +33,20 @@ ipcmnname, ipsocname, instance, regfile
 ...
 
 */
+/**
+ * @brief Reads ASIC information from a database file.
+ *
+ * This function reads and parses an ASIC description file to initialize an
+ * \ref umr_asic structure. The file contains details about the ASIC, including
+ * common name, SOC15 filename, family ID, number of blocks, VGPR granularity,
+ * and whether it is an APU. It also lists IP blocks associated with the ASIC.
+ *
+ * @param options Pointer to a \ref umr_options structure containing configuration options.
+ * @param filename The name of the database file to read from.
+ * @param errout Callback function for error output.
+ *
+ * @return A pointer to the initialized \ref umr_asic structure on success, or NULL on failure.
+ */
 struct umr_asic *umr_database_read_asic(struct umr_options *options, char *filename, umr_err_output errout)
 {
 	char linebuf[256], cmnname[256], soc15fname[256], ipcmnname[256], ipsocname[256], regfile[256];
@@ -44,7 +58,7 @@ struct umr_asic *umr_database_read_asic(struct umr_options *options, char *filen
 		int family, numblocks, vgpr_granularity, is_apu;
 	} asic_fields;
 
-	f = umr_database_open(options->database_path, filename);
+	f = umr_database_open(options->database_path, filename, 0);
 	if (!f) {
 		return NULL;
 	}

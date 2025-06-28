@@ -24,35 +24,86 @@
  */
 #include "panels.h"
 
-static char ring_decode_buffer[8196];
-static int ring_decode_buffer_offset = 0;
-static int ring_decode_fn(const char *fmt, ...) {
-	va_list ap;
-	va_start(ap, fmt);
-	ring_decode_buffer_offset += vsprintf(&ring_decode_buffer[ring_decode_buffer_offset], fmt, ap);
-	va_end(ap);
-	return 0;
+static const char * get_ring_name(JSON_Array *rings, int idx) {
+	assert(idx >= 0 && idx < json_array_get_count(rings));
+	return json_array_get_string(rings, idx) + strlen("amdgpu_ring_");
 }
 
-static bool get_ring_name(void *data, int idx, const char **out) {
-	JSON_Array *rings = (JSON_Array *)data;
-	if (idx >= 0 && idx < json_array_get_count(rings)) {
-		*out = json_array_get_string(rings, idx);
-		return true;
+static void _start_ib(struct umr_stream_decode_ui *, uint64_t, uint32_t, uint64_t, uint32_t, uint32_t, int) {
+	/* TODO: mouse over link? */
+}
+
+static void _add_shader(struct umr_stream_decode_ui *ui, struct umr_asic *asic, uint64_t ib_addr, uint32_t ib_vmid, struct umr_shaders_pgm *shader) {
+	/* TODO: mouse over link? */
+}
+
+static void _add_data(struct umr_stream_decode_ui *ui, struct umr_asic *asic, uint64_t ib_addr, uint32_t ib_vmid, uint64_t buf_addr, uint32_t buf_vmid, enum UMR_DATABLOCK_ENUM type, uint64_t etype) {
+	/* no-op */
+}
+
+static void _ring_unhandled(struct umr_stream_decode_ui *ui, struct umr_asic *asic, uint64_t ib_addr, uint32_t ib_vmid, void *str, enum umr_ring_type rt) {
+	/* Ignore */
+}
+
+static void _done(struct umr_stream_decode_ui *ui) {
+	/* no-op */
+}
+
+static void _start_opcode(struct umr_stream_decode_ui *ui, uint64_t ib_addr,
+						 uint32_t ib_vmid, int pkttype,
+						 uint32_t opcode, uint32_t subop, uint32_t nwords,
+						 const char *opcode_name, uint32_t header, const uint32_t* raw_data) {
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(0);
+	ImGui::Text("#0083d80x%" PRIx64, ib_addr);
+	ImGui::TableSetColumnIndex(1);
+	ImGui::Text("%08x", header);
+	ImGui::TableSetColumnIndex(2);
+	if (ImGui::TreeNode((void*)ib_addr, "#8f979c%s", opcode_name)) {
+		*((bool*)ui->data) = true;
+		ImGui::TreePop();
+	} else {
+		*((bool*)ui->data) = false;
 	}
-	return false;
+}
+
+static void _add_field(struct umr_stream_decode_ui *ui, uint64_t ib_addr,
+					  uint32_t ib_vmid, const char *field_name,
+					  uint64_t value, char *str, int ideal_radix, int field_size)
+{
+	if (*((bool*)ui->data) == false)
+		return;
+
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(0);
+	ImGui::Text("#0083d80x%" PRIx64, ib_addr);
+	ImGui::TableSetColumnIndex(2);
+	ImGui::Indent();
+
+	if (!strcmp(field_name, "REG") && ideal_radix == 16) {
+		ImGui::Text("#d33682%s = #dbde790x%x", str, (unsigned int)value);
+	} else {
+		ImGui::Text("%s =", field_name);
+		if (str) {
+			ImGui::SameLine();
+			ImGui::Text("[%s] ", str);
+		}
+		if (ideal_radix) {
+			ImGui::SameLine();
+			if (ideal_radix == 10)
+				ImGui::Text("#dbde79%" PRIu64, value);
+			else if (ideal_radix == 16)
+				ImGui::Text("#dbde790x%" PRIx64, value);
+		}
+	}
+	ImGui::Unindent();
 }
 
 class RingsPanel : public Panel {
 public:
-	RingsPanel(struct umr_asic *asic) : Panel(asic), last_answer(NULL) {
-		/* PKT3_ */
-		/* PKT3_DRAW_ | PKT3_DISPATCH */
-		ib_syntax.add_definition("(PKT3_DRAW[A-Z_0-9]*|PKT3_DISPATCH[A-Z_0-9]*)", { "#a42721" });
+	RingsPanel(struct umr_asic *asic) : Panel(asic), last_answer(NULL), raw_data(NULL) {
 		/* number */
 		ib_syntax.add_definition("(0x[a-z0-9]*)", { "#dbde79" });
-		/* keyword */
-		ib_syntax.add_definition("(PKT[0-3],|OPCODE)", { "#8f979c" });
 
 		/* SGPR */
 		shader_syntax.add_definition("(s[[:digit:]]+|s\\[[[:digit:]]+:[[:digit:]]+\\])", { "#d33682" });
@@ -71,53 +122,91 @@ public:
 	}
 
 	~RingsPanel() {
-		if (last_answer)
+		if (last_answer) {
 			json_value_free(json_object_get_wrapping_value(last_answer));
+			free(raw_data);
+		}
 	}
 
-	void process_server_message(JSON_Object *request, JSON_Value *answer) {
+	void process_server_message(JSON_Object *response, void *_raw_data, unsigned raw_data_size) {
+		JSON_Value *error = json_object_get_value(response, "error");
+		if (error)
+			return;
+
+		JSON_Object *request = json_object(json_object_get_value(response, "request"));
+		JSON_Value *answer = json_object_get_value(response, "answer");
 		const char *command = json_object_get_string(request, "command");
 
 		if (!strcmp(command, "ring")) {
 			if (last_answer)
 				json_value_free(json_object_get_wrapping_value(last_answer));
 			last_answer = json_object(json_value_deep_copy(answer));
+			free(this->raw_data);
+			this->raw_data = (uint32_t*)malloc(raw_data_size);
+			memcpy(this->raw_data, _raw_data, raw_data_size);
 		}
 	}
 
 	bool display(float dt, const ImVec2& avail, bool can_send_request) {
-		const float _8digitsize = ImGui::CalcTextSize("0x00000000").x + ImGui::GetStyle().FramePadding.x * 2;
+		const float padding = ImGui::GetStyle().FramePadding.x;
+		const float _8digitsize = ImGui::CalcTextSize("0x00000000").x + padding * 2;
 
 		JSON_Array *rings = json_object_get_array(info, "rings");
 		if (current_item < 0)
 			current_item = json_array_get_count(rings) - 1;
 
-		ImGui::Checkbox("Halt waves", &halt);
-		ImGui::SameLine();
 		ImGui::TextUnformatted("Select ring:");
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(_8digitsize * 4);
 		ImGui::PushID("selectring");
-		ImGui::Combo("", &current_item, get_ring_name, rings, json_array_get_count(rings));
+
+		float max_w = 0;
+		for (size_t i = 0; i < json_array_get_count(rings); i++) {
+			max_w = std::max(max_w, ImGui::CalcTextSize(get_ring_name(rings, i)).x);
+		}
+		ImGui::SetNextItemWidth(max_w + padding * 2 + ImGui::GetFrameHeight());
+		if (ImGui::BeginCombo("", json_array_get_string(rings, current_item) + strlen("amdgpu_ring_"))) {
+			for (size_t i = 0; i < json_array_get_count(rings); i++) {
+				const char *ring_name = get_ring_name(rings, i);
+				ImGui::BeginDisabled(strstr(ring_name, "jpeg"));
+				if (ImGui::Selectable(ring_name, i == current_item)) {
+					current_item = i;
+				}
+				ImGui::EndDisabled();
+			}
+			ImGui::EndCombo();
+		}
+
 		ImGui::PopID();
 		ImGui::SameLine();
+
 		ImGui::BeginDisabled(!can_send_request);
-		ImGui::Checkbox("Limit to rptr/wptr", &rptr_wptr);
-		ImGui::SameLine();
-		ImGui::BeginDisabled(dt < 0);
-		if (ImGui::Button("Read")) {
-			const char *ring_name;
-			get_ring_name(rings, current_item, &ring_name);
-			send_ring_command(&ring_name[strlen("amdgpu_ring_")], halt, rptr_wptr);
+		if (ImGui::Button("  Read Ring  ")) {
+			const char *ring_name = get_ring_name(rings, current_item);
+			send_ring_command(ring_name, halt, rptr_wptr);
 		}
-		ImGui::EndDisabled();
+		ImGui::SameLine();
+
+		/* Right-align options. */
+		float w = ImGui::CalcTextSize("Options:").x +
+				  padding +
+				  ImGui::CalcTextSize("Halt waves").x + ImGui::GetFrameHeight() + 2 * padding +
+				  ImGui::CalcTextSize("Limit to rptr/wptr").x + ImGui::GetFrameHeight() + 2 * padding;
+
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - w);
+		ImGui::Text("Options:");
+		ImGui::SameLine();
+		ImGui::Checkbox("Halt waves", &halt);
+		ImGui::SameLine();
+		ImGui::Checkbox("Limit to rptr/wptr", &rptr_wptr);
 		ImGui::EndDisabled();
 		ImGui::Separator();
 		if (last_answer) {
 			JSON_Array *ibs = json_object_get_array(last_answer, "ibs");
 			JSON_Array *shaders = json_object_get_array(last_answer, "shaders");
-			JSON_Array *ring = json_object_get_array(json_object(json_object_get_value(last_answer, "ring")), "opcodes");
-			int decoder = json_object_get_number(last_answer, "decoder");
+			JSON_Array *vcns = json_object_get_array(last_answer, "vcns");
+			JSON_Object *ring = json_object(json_object_get_value(last_answer, "ring"));
+			enum umr_ring_type type = (enum umr_ring_type)json_object_get_number(last_answer, "ring_type");
 
 			int rptr = json_object_get_number(last_answer, "read_ptr");
 			int wptr = json_object_get_number(last_answer, "write_ptr");
@@ -130,7 +219,7 @@ public:
 				ImGui::Text("Last signaled fence: #dbde790x%08x",
 					(uint32_t)json_object_get_number(last_answer, "last_signaled_fence"));
 				ImGui::BeginChild("ringtabs scroll");
-				highlight_lo_ib = display_ib(ring, decoder, 0, rptr, wptr, drv_wptr);
+				highlight_lo_ib = display_ib(ring, type, 0, this->raw_data, rptr, wptr, drv_wptr);
 				ImGui::EndChild();
 				ImGui::EndTabItem();
 			}
@@ -148,7 +237,7 @@ public:
 					if (high)
 						ImGui::PopStyleColor();
 					ImGui::BeginChild(tmp);
-					highlight_lo_ib = display_ib(json_object_get_array(ib, "opcodes"), decoder, base);
+					highlight_lo_ib = display_ib(ib, type, base, this->raw_data);
 					ImGui::EndChild();
 					ImGui::EndTabItem();
 				} else if (high) {
@@ -203,6 +292,57 @@ public:
 				ImGui::PopID();
 			}
 
+			for (int i = 0; i < json_array_get_count(vcns); i++) {
+				JSON_Object *vcn = json_object(json_array_get_value(vcns, i));
+				uint64_t base = (uint64_t) json_object_get_number(vcn, "address");
+				uint64_t vmid = (uint64_t) json_object_get_number(vcn, "vmid");
+				uint32_t type = (uint64_t) json_object_get_number(vcn, "type");
+				char tmp[128];
+				sprintf(tmp, "IB 0x%" PRIx64"@0x%" PRIx64, vmid, base);
+				ImGui::PushID(i);
+				if (ImGui::BeginTabItem(tmp)) {
+					JSON_Array *op = json_object_get_array(vcn, "opcodes");
+					uint32_t *copy = new uint32_t[json_array_get_count(op)];
+					for (size_t j = 0; j < json_array_get_count(op); j++)
+						copy[j] = (uint32_t)json_array_get_number(op, j);
+
+					char **opcode_strs = NULL;
+
+					umr_vcn_decode(asic, copy, json_array_get_count(op) * 4, base, type, &opcode_strs);
+
+					sprintf(tmp, "0x%" PRIx64, base);
+
+					ImGui::BeginChild(tmp);
+					ImGui::BeginTable("vcn", 3, ImGuiTableFlags_Borders);
+					ImGui::TableSetupColumn(tmp, ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize(" 0x0000000000 ").x);
+					ImGui::TableSetupColumn("Raw Value", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("0x00000000  ").x);
+					ImGui::TableSetupColumn("Decoded IB");
+					ImGui::TableHeadersRow();
+					for (size_t j = 0; j < json_array_get_count(op); j++) {
+						ImGui::TableNextRow();
+						ImGui::TableSetColumnIndex(0);
+						ImGui::Text("+ 0x%lx", j * 4);
+						if (ImGui::IsItemHovered()) {
+							ImGui::BeginTooltip();
+							ImGui::Text("0x%" PRIx64, base + j * 4);
+							ImGui::EndTooltip();
+						}
+						ImGui::TableSetColumnIndex(1);
+						ImGui::Text("0x%08x", (uint32_t)json_array_get_number(op, j));
+						ImGui::TableSetColumnIndex(2);
+						ImGui::Text("%s", opcode_strs && opcode_strs[j] ?opcode_strs[j]:"...");
+						if (opcode_strs && opcode_strs[j])
+							free(opcode_strs[j]);
+					}
+					ImGui::EndTable();
+					free(opcode_strs);
+					delete[] copy;
+					ImGui::EndChild();
+					ImGui::EndTabItem();
+				}
+				ImGui::PopID();
+			}
+
 			ImGui::EndTabBar();
 		}
 		return false;
@@ -217,173 +357,59 @@ private:
 		send_request(req);
 	}
 
-	uint32_t display_ib(JSON_Array *raw, int decoder_type, uint64_t base, int rptr = -1, int wptr = -1, int drv_wptr = -1) {
+	uint32_t display_ib(JSON_Object *ib, enum umr_ring_type type, uint64_t base, uint32_t *buffer, int rptr = -1, int wptr = -1, int drv_wptr = -1) {
 		uint32_t addr_lo_ib = 0;
 
-		ImGuiListClipper clipper;
-		clipper.Begin(json_array_get_count(raw));
-		ImGui::BeginTable("dis", rptr >= 0 ? 5 : 4, ImGuiTableFlags_BordersV);
-		ImGui::TableSetupColumn(rptr >= 0 ? "Index" : "Address", ImGuiTableColumnFlags_WidthFixed,
-			rptr >= 0 ? ImGui::CalcTextSize(" Index ").x : ImGui::CalcTextSize(" 0x0000000000000000 + 0x0000").x);
-		ImGui::TableSetupColumn("Raw Value", ImGuiTableColumnFlags_WidthFixed,
-			ImGui::CalcTextSize(" 00000000 ").x);
-		if (rptr >= 0)
-			ImGui::TableSetupColumn("Pointers", ImGuiTableColumnFlags_WidthFixed,
-				ImGui::CalcTextSize("Pointers").x);
-		ImGui::TableSetupColumn("Opcode", ImGuiTableColumnFlags_WidthFixed,
-				ImGui::CalcTextSize("PKT3_XXXXXXXXXXXXXXXXXXXXXXX").x);
-		ImGui::TableSetupColumn("Disassembly");
-		ImGui::TableHeadersRow();
-
-		int draw_dispatch_count = 0;
-		while (clipper.Step()) {
-			struct umr_ring_decoder decoder;
-			memset(&decoder, 0, sizeof decoder);
-			decoder.pm = decoder_type;
-			decoder.sdma.cur_opcode = 0xFFFFFFFF;
-			decoder.pm4.cur_opcode = 0xFFFFFFFF;
-			asic->options.no_follow_ib = 1;
-			asic->options.use_colour = 0;
-			asic->options.bitfields = 0;
-
-			bool is_new_pkt;
-			int pkt_count = 1;
-			bool current_pkt3_is_draw = false;
-			bool previous_pkt3_was_draw = false;
-			for (int i = 0 ; i < clipper.DisplayEnd; i++) {
-				int col = 0;
-				uint32_t raw_value = json_array_get_number(raw, i);
-
-				ring_decode_buffer_offset = 0;
-				umr_print_decode(asic, &decoder, raw_value, ring_decode_fn);
-
-				char *line = ring_decode_buffer;
-
-				/* New PKT3 packet */
-				is_new_pkt =
-					(strncmp(line, "PKT3,", 5) == 0 && strstr(line, "OPCODE") != NULL) ||
-					strncmp(line, "OPCODE:", strlen("OPCODE:")) == 0;
-				if (is_new_pkt) {
-					if (decoder_type == 4) {
-						line = &line[strlen("PKT3,")];
-						previous_pkt3_was_draw = current_pkt3_is_draw;
-						current_pkt3_is_draw =
-							strstr(line, "PKT3_DRAW_") != NULL ||
-							strstr(line, "PKT3_DISPATCH") != NULL;
-						if (previous_pkt3_was_draw)
-							draw_dispatch_count++;
-					}
-
-					pkt_count++;
-				}
-
-				if (i < clipper.DisplayStart)
-					continue;
-
-				if (is_new_pkt && previous_pkt3_was_draw) {
-					ImGui::TableHeadersRow();
-				}
-				ImGui::TableNextRow();
-				ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
-					ImGui::GetColorU32((pkt_count % 2) + ImGuiCol_TableRowBg));
-
-				bool indent = false;
-
-				char *ind = strstr(line, "---+");
-				if (ind) {
-					indent = true;
-					line = &ind[5];
-				}
-				if (strncmp(line, "PKT3 ", strlen("PKT3 ")) == 0)
-					line = &line[5];
-
-				ImGui::TableSetColumnIndex(col++);
-				if (rptr >= 0) {
-					ImGui::Text("%04d", i);
-				} else {
-					ImGui::Text("0x%" PRIx64 " + #0083d80x%x", base, 4 * i);
-				}
-
-				ImGui::TableSetColumnIndex(col++);
-				ImGui::Text("%08x", raw_value);
-
-				if (rptr >= 0) {
-					ImGui::TableSetColumnIndex(col++);
-					if (i == rptr) {
-						ImGui::TextUnformatted("#d33682R");
-					}
-					if (i == wptr) {
-						ImGui::SameLine();
-						ImGui::TextUnformatted("#b58900W");
-					}
-					if (i == drv_wptr) {
-						ImGui::SameLine();
-						ImGui::TextUnformatted("#586e75DW");;
-					}
-				}
-
-				char *colored = (char*) ib_syntax.transform(line);
-
-				ImGui::TableSetColumnIndex(col++);
-				char *opcode_start = NULL;
-				char *opcode_end = NULL;
-				if (is_new_pkt) {
-					opcode_start = strstr(colored, "OPCODE");
-					if (opcode_start) {
-						opcode_start = strchr(opcode_start, '[');
-						if (opcode_start) {
-							opcode_end = strchr(opcode_start, ']');
-							ImGui::TextUnformatted(opcode_start + 1, opcode_end);
-							opcode_end++;
-							/* Advance opcode_end to the first alpha-numerical char */
-							while (*opcode_end && !isalnum(*opcode_end))
-								opcode_end++;
-						}
-					}
-					if (decoder_type == 3) {
-						/* sdma packet starts by the opcode, so display the rest of the line. */
-						colored = opcode_end;
-						opcode_start = NULL;
-					}
-				}
-
-				ImGui::TableSetColumnIndex(col++);
-
-				if (indent) {
-					ImGui::Indent();
-					ImGui::Indent();
-				}
-
-				char *lnk = strstr(colored, "IB_BASE_LO: ");
-				if (lnk) {
-					lnk += strlen("IB_BASE_LO: ");
-					ImVec2 start = ImGui::CalcTextSize(colored, lnk);
-					ImVec2 end = ImGui::CalcTextSize(lnk, &lnk[17]);
-					ImVec2 cursor = ImGui::GetCursorScreenPos();
-					cursor.x += start.x;
-					end.x += cursor.x;
-					end.y += cursor.y;
-					if (ImGui::IsMouseHoveringRect(cursor, end)) {
-						sscanf(lnk + 7, "0x%08x", &addr_lo_ib);
-						memcpy(lnk, "#ff8080", 7);
-					}
-				}
-
-				ImGui::TextUnformatted(colored, opcode_start);
-				if (indent) {
-					ImGui::Unindent();
-					ImGui::Unindent();
-				}
-			}
+		if (buffer == NULL) {
+			ImVec2 space = ImGui::GetContentRegionAvail();
+			float w = ImGui::CalcTextSize("Empty ring").x;
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + space.x / 2 - w / 2);
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + space.y / 2);
+			ImGui::Text("Empty Ring");
+			return 0;
 		}
 
+		ImGui::BeginTable("dis", 3, ImGuiTableFlags_BordersV);
+		ImGui::TableSetupColumn(rptr >= 0 ? "Index" : "Address", ImGuiTableColumnFlags_WidthFixed,
+			rptr >= 0 ? ImGui::CalcTextSize(" Index ").x : ImGui::CalcTextSize(" 0x0000000000000000 ").x);
+		ImGui::TableSetupColumn("Raw Value", ImGuiTableColumnFlags_WidthFixed,
+			ImGui::CalcTextSize(" 00000000 ").x);
+		ImGui::TableSetupColumn("Opcode");
+		ImGui::TableHeadersRow();
+
+		uint32_t start = (uint32_t)json_object_get_number(ib, "opcode_start");
+		uint32_t ndwords = (uint32_t)json_object_get_number(ib, "opcode_count");
+
+		int draw_dispatch_count = 0;
+
+		bool opcode_verbose = false;
+		struct umr_stream_decode_ui ui = { };
+		ui.rt = type;
+		ui.start_ib = _start_ib;
+		ui.start_opcode = _start_opcode;
+		ui.add_field = _add_field;
+		ui.add_shader = _add_shader;
+		ui.add_data = _add_data;
+		ui.unhandled = _ring_unhandled;
+		ui.done = _done;
+		ui.data = &opcode_verbose;
+
+		struct umr_packet_stream *str = umr_packet_decode_buffer(
+			asic, &ui, 0, base,
+			&buffer[start], ndwords,
+			type);
+
+		if (str)
+			umr_packet_disassemble_stream(str, base, 0, 0, 0, ~0UL, 0, 0);
+		umr_packet_free(str);
+
 		ImGui::EndTable();
-		clipper.End();
 
 		return addr_lo_ib;
 	}
 private:
 	JSON_Object *last_answer;
+	uint32_t *raw_data;
 	SyntaxHighlighter ib_syntax;
 	SyntaxHighlighter shader_syntax;
 	int current_item;

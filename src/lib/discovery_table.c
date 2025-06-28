@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,7 +22,6 @@
  * Authors: Kevin Wang <kevinyang.wang@amd.com>
  *
  */
-
 #include "umr.h"
 #include "import/discovery.h"
 #include "import/soc15_hw_ip.h"

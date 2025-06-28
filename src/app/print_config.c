@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,6 +22,7 @@
  * Authors: Tom St Denis <tom.stdenis@amd.com>
  *
  */
+#include <dirent.h>
 #include "umrapp.h"
 
 #define p(x) printf("\t" #x " == %lu\n" , (unsigned long)asic->config. x)
@@ -69,6 +70,8 @@ M(AMD_CG_SUPPORT_ATHUB_LS, 1UL << 28)
 M(AMD_CG_SUPPORT_ATHUB_MGCG, 1UL << 29)
 M(AMD_CG_SUPPORT_JPEG_MGCG, 1UL << 30)
 M(AMD_CG_SUPPORT_GFX_FGCG, 1UL << 31)
+M(AMD_CG_SUPPORT_REPEATER_FGCG, 1ULL << 32)
+M(AMD_CG_SUPPORT_GFX_PERF_CLK, 1ULL << 33)
 { NULL, 0, },
 };
 
@@ -94,6 +97,8 @@ M(AMD_PG_SUPPORT_VCN, 1UL << 14)
 M(AMD_PG_SUPPORT_VCN_DPG, 1UL << 15)
 M(AMD_PG_SUPPORT_ATHUB, 1UL << 16)
 M(AMD_PG_SUPPORT_JPEG, 1UL << 17)
+M(AMD_PG_SUPPORT_IH_SRAM_PG, 1ULL << 18)
+M(AMD_PG_SUPPORT_JPEG_DPG, 1ULL << 19)
 { NULL, 0, },
 };
 
@@ -118,6 +123,7 @@ void umr_print_config(struct umr_asic *asic)
 	printf("\tasic.instance == %d\n", asic->instance);
 	printf("\tasic.devname == %s\n", asic->options.pci.name);
 	printf("\tasic.family == %d\n", (int)asic->family);
+	printf("\tasic.did == 0x%" PRIx32 "\n", (uint32_t)asic->did);
 
 	printf("\n\tasic.gtt_size == %llu\n", (unsigned long long)asic->config.gtt_size);
 	printf("\tasic.vis_vram_size == %llu\n", (unsigned long long)asic->config.vis_vram_size);
@@ -186,6 +192,7 @@ void umr_print_config(struct umr_asic *asic)
 			printf(", %s", family[x].name);
 	printf("\n");
 	p(is_apu);
+	printf("\tvgpr_granularity == %d\n", asic->parameters.vgpr_granularity);
 	px(gfx.rev_id);
 	px(gfx.external_rev_id);
 	plx(gfx.cg_flags);
@@ -197,4 +204,20 @@ void umr_print_config(struct umr_asic *asic)
 		if (asic->config.gfx.pg_flags & pg_masks[x].mask)
 			printf("\t\t%s\n", pg_masks[x].name);
 	printf("\n");
+	/* Discover the rings */
+	{
+		char fname[256];
+		struct dirent *dir;
+		sprintf(fname, "/sys/kernel/debug/dri/%d/", asic->instance);
+		DIR *d = opendir(fname);
+		if (d) {
+			printf("\tRings:\n");
+			while ((dir = readdir(d))) {
+				if (strncmp(dir->d_name, "amdgpu_ring_", strlen("amdgpu_ring_")) == 0) {
+					printf("\t\t%s\n", dir->d_name + strlen("amdgpu_ring_"));
+				}
+			}
+			closedir(d);
+		}
+	}
 }

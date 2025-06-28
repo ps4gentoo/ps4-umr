@@ -4,11 +4,12 @@
 extern void parse_sysfs_clock_file(char *content, int *min, int *max);
 extern JSON_Value *compare_fence_infos(const char *before, const char *after);
 extern JSON_Array *parse_vm_info(const char *content);
-extern JSON_Array *parse_kms_framebuffer_sysfs_file(const char *content);
+extern JSON_Array *parse_gem_info(const char *content, void *pids, unsigned n);
+extern JSON_Array *parse_kms_framebuffer_sysfs_file(struct umr_asic *asic, const char *content);
 extern JSON_Object *parse_kms_state_sysfs_file(const char *content);
 extern JSON_Object *parse_pp_features_sysfs_file(const char *content);
 
-enum TEST_RESULT test_parse_sysfs_clock_file()
+static enum TEST_RESULT test_parse_sysfs_clock_file(__attribute__((unused)) struct umr_asic* asic)
 {
     char *content =
         "0: 500Mhz \n"
@@ -22,7 +23,7 @@ enum TEST_RESULT test_parse_sysfs_clock_file()
     return TEST_SUCCESS;
 }
 
-enum TEST_RESULT test_parse_fence_info()
+static enum TEST_RESULT test_parse_fence_info(__attribute__((unused)) struct umr_asic* asic)
 {
     const char *before =
         "--- ring 0 (gfx_0.0.0) ---\n"
@@ -70,7 +71,7 @@ enum TEST_RESULT test_parse_fence_info()
     return TEST_SUCCESS;
 }
 
-enum TEST_RESULT test_parse_vm_info()
+static enum TEST_RESULT test_parse_vm_info(__attribute__((unused)) struct umr_asic* asic)
 {
     const char *content =
         "pid:0\tProcess: ----------\n"
@@ -110,39 +111,46 @@ enum TEST_RESULT test_parse_vm_info()
     ASSERT_EQ(json_array_get_count(out), 2);
     for (int i = 0; i < 2; i++) {
         JSON_Object *v = json_object(json_array_get_value(out, i));
-        ASSERT_STR_EQ(json_object_get_string(v, "name"), names[i]);
+        JSON_Object *fd = json_object(
+            json_array_get_value(json_object_get_array(v, "fds"), 0));
+        ASSERT_STR_EQ(json_object_get_string(fd, "command"), names[i]);
         ASSERT_EQ(json_object_get_number(v, "pid"), pids[i]);
-        ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Relocated")), 0);
-        ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Moved")), 0);
-        ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Invalidated")), 0);
-        if (i == 0) {
-            ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Done")), 0);
-            ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Idle")), 0);
-            ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Evicted")), 1);
-            ASSERT_EQ(json_object_get_number(v, "total"), 4096);
-        } else {
-            ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Evicted")), 0);
-            ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Done")), 1);
-            ASSERT_EQ(json_array_get_count(json_object_get_array(v, "Idle")), 2);
-            ASSERT_EQ(json_object_get_number(v, "total"), 2105344);
-            JSON_Value *bo = json_array_get_value(json_object_get_array(v, "Idle"), 1);
-            JSON_Array *attr = json_object_get_array(json_object(bo), "attributes");
-            ASSERT_EQ(json_array_get_count(attr), 4);
-            const char *exp[] = {
-                "GTT",
-                "exported as 000000000a49a273",
-                "NO_CPU_ACCESS",
-                "CPU_GTT_USWC"
-            };
-            for (int i = 0; i < 4; i++)
-                ASSERT_STR_EQ(json_array_get_string(attr, i), exp[i]);
-        }
     }
     json_value_free(json_array_get_wrapping_value(out));
     return TEST_SUCCESS;
 }
 
-enum TEST_RESULT test_parse_sysfs_framebuffer()
+static enum TEST_RESULT test_parse_gem_info(__attribute__((unused)) struct umr_asic* asic)
+{
+    const char *content =
+        "pid    44961 command Xwayland:\n"
+        "pid    44961 command Xwayland:\n"
+        "\t\t0x00000001:     19652608 byte VRAM exported as ino:15413 NO_CPU_ACCESS CPU_GTT_USWC\n"
+        "pid    47113 command firefox:\n"
+        "\t\t\t\t0x00000001:         4096 byte  GTT CPU_ACCESS_REQUIRED\n"
+        "\t\t\t\t0x00000002:      2097152 byte  GTT CPU_ACCESS_REQUIRED\n"
+        "\t\t\t\t0x00000003:      2097152 byte VRAM CPU_GTT_USWC\n"
+        "\t\t\t\t0x00000004:      2097152 byte VRAM NO_CPU_ACCESS CPU_GTT_USWC\n"
+        "\t\t\t\t0x00000005:         4096 byte  GTT CPU_ACCESS_REQUIRED\n"
+        "\t\t\t\t0x00000006:         4096 byte  GTT CPU_ACCESS_REQUIRED\n"
+        "\t\t\t\t0x00000007:         4096 byte  GTT CPU_ACCESS_REQUIRED\n";
+
+    unsigned pids[] = { 44961, 44961, 47113 };
+    const char *names[] = { "Xwayland", "Xwayland", "firefox" };
+    unsigned counts[] = { 0, 1, 7 };
+    JSON_Array *out = parse_gem_info(content, NULL, 0);
+    ASSERT_EQ(json_array_get_count(out), 3);
+    for (int i = 0; i < 3; i++) {
+        JSON_Object *v = json_object(json_array_get_value(out, i));
+        ASSERT_STR_EQ(json_object_get_string(v, "command"), names[i]);
+        ASSERT_EQ(json_object_get_number(v, "pid"), pids[i]);
+        ASSERT_EQ(json_array_get_count(json_object_get_array(v, "bos")), counts[i]);
+    }
+    json_value_free(json_array_get_wrapping_value(out));
+    return TEST_SUCCESS;
+}
+
+static enum TEST_RESULT test_parse_sysfs_framebuffer(__attribute__((unused)) struct umr_asic* asic)
 {
     const char *content =
         "framebuffer[135]:\n"
@@ -178,13 +186,13 @@ enum TEST_RESULT test_parse_sysfs_framebuffer()
         "\t\t\tsize=19906560\n"
         "\t\t\timported=no\n";
 
-    JSON_Array *out = parse_kms_framebuffer_sysfs_file(content);
+    JSON_Array *out = parse_kms_framebuffer_sysfs_file(NULL, content);
 
     const char *expected_json =
         "[ \
             { \
                 \"id\": 135, \"allocated by\": \"gnome-shell\", \"format\": \"AR24 little-endian (0x34325241)\", \
-                \"modifier\": 0, \"size\": { \"w\": 256, \"h\": 256 }, \
+                \"modifier\": \"0\", \"modifier_str\": \"LINEAR\", \"size\": { \"w\": 256, \"h\": 256 }, \
                 \"layers\": [ \
                     { \
                         \"size\": { \"w\": 256, \"h\": 256 }, \
@@ -194,7 +202,7 @@ enum TEST_RESULT test_parse_sysfs_framebuffer()
             }, \
             { \
                 \"id\": 119, \"allocated by\": \"[fbcon]\", \"format\": \"XR24 little-endian (0x34325258)\", \
-                \"modifier\": 4660, \"size\": { \"w\": 3440, \"h\": 1440 }, \
+                \"modifier\": \"1234\", \"size\": { \"w\": 3440, \"h\": 1440 }, \
                 \"layers\": [ \
                     { \
                         \"size\": { \"w\": 3440, \"h\": 1440 }, \
@@ -205,12 +213,11 @@ enum TEST_RESULT test_parse_sysfs_framebuffer()
         ]";
 
     JSON_Value *expected = json_parse_string(expected_json);
-
     ASSERT_EQ(json_value_equals(json_array_get_wrapping_value(out), expected), 1);
     return TEST_SUCCESS;
 }
 
-enum TEST_RESULT test_parse_sysfs_state()
+static enum TEST_RESULT test_parse_sysfs_state(__attribute__((unused)) struct umr_asic* asic)
 {
     const char *content =
         "plane[65]: plane-5\n"
@@ -272,7 +279,7 @@ enum TEST_RESULT test_parse_sysfs_state()
     return TEST_SUCCESS;
 }
 
-enum TEST_RESULT test_parse_sysfs_pp_features()
+static enum TEST_RESULT test_parse_sysfs_pp_features(__attribute__((unused)) struct umr_asic* asic)
 {
     const char *content =
         "features high: 0x00003763 low: 0xa37f7dff\n"
@@ -378,7 +385,7 @@ enum TEST_RESULT test_parse_sysfs_pp_features()
     return TEST_SUCCESS;
 }
 
-enum TEST_RESULT test_parse_sysfs_pp_features2()
+static enum TEST_RESULT test_parse_sysfs_pp_features2(__attribute__((unused)) struct umr_asic* asic)
 {
     const char *content =
         "Current ppfeatures: 0x0000000019f0e3cf\n"
@@ -468,6 +475,7 @@ DEFINE_TESTS(server_tests)
 TEST(test_parse_sysfs_clock_file, "navi_reg_only.envdef", "navi10"),
 TEST(test_parse_fence_info, "navi_reg_only.envdef", "navi10"),
 TEST(test_parse_vm_info, "navi_reg_only.envdef", "navi10"),
+TEST(test_parse_gem_info, "navi_reg_only.envdef", "navi10"),
 TEST(test_parse_sysfs_framebuffer, "navi_reg_only.envdef", "navi10"),
 TEST(test_parse_sysfs_state, "navi_reg_only.envdef", "navi10"),
 TEST(test_parse_sysfs_pp_features, "navi_reg_only.envdef", "navi10"),

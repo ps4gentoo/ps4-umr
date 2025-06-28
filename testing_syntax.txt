@@ -1,13 +1,82 @@
-; comment
-; this syntax will be used by mmio/vram/sysram callbacks to pretend
-; like we're on a live system to allow umr testing with known answers
-;
-;
+=== Test Harness Data Syntax ===
+This document describes the syntax and structure of the test harness data files used by the UMR (Unified Memory Reader) tool. The test harness data is used to simulate hardware registers, memory blocks, and other components for testing purposes.
 
-SYSRAM@0x123456000={...} ; data is specified as a unformated list of hexadecimal bytes (leading 0)
-VRAM@0x123456000={...} ; data specified like SYSRAM
-MMIO@0x12345={...[,...]} ; can specify multiple values that will be read in turn with the last value being read on all subsequent reads
-; note reads from select special registers like SQ_IND_INDEX/DATA or MM_INDEX/DATA will be
-; interpreted as SQ or VRAM accesses and not go through the MMIO lookup
-SQ@0x12345={...} ; SQ indirect space where address is the value of mmSQ_IND_INDEX
+=== General Structure ===
+The test harness data file consists of key-value pairs where keys represent different types of data blocks or configurations, and values provide the corresponding data in a specific format.
 
+=== Key Types ===
+GCACONFIG: Configuration data for the GPU.
+DISCOVERY: Discovery data for the GPU.
+SYSRAM@<address>: System RAM block starting at <address>.
+VRAM@<address>: Video RAM block starting at <address>.
+MMIO@<address>: MMIO (Memory-Mapped I/O) register values starting at <address>.
+VGPR@<address>: VGPR (Vector General Purpose Register) values starting at <address>.
+SGPR@<address>: SGPR (Scalar General Purpose Register) values starting at <address>.
+WAVESTATUS@<address>: Wavefront status data starting at <address>.
+RINGDATA: Ring buffer data.
+
+=== Special Addresses ===
+For VGPR/SGPR blocks the address actually specifies where the GPRs were read from using the following
+encoding:
+
+    For NV and up:
+		addr =  (1ULL << 60) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SE_ID") << 12) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SA_ID") << 20) |
+				((((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "WGP_ID") << 2) |
+				  (uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "SIMD_ID")) << 28) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID1", "WAVE_ID") << 36);
+
+		nr = umr_wave_data_num_of_sgprs(asic, wd);
+
+    For all older (pre-NV) ASICs:
+		addr =  (1ULL << 60) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SE_ID") << 12) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SH_ID") << 20) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "CU_ID") << 28) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "WAVE_ID") << 36) |
+				((uint64_t)umr_wave_data_get_bits(asic, wd, "ixSQ_WAVE_HW_ID", "SIMD_ID") << 44);
+
+For Wavefront status registers the following encoding is used:
+
+    For ALL ASICs:
+        addr = 0 |
+            ((uint64_t)se << 7) |
+            ((uint64_t)sh << 15) |
+            ((uint64_t)cu << 23) |
+            ((uint64_t)wave << 31) |
+            ((uint64_t)simd << 37);
+
+=== Value Formats ===
+Bytes Array: { <byte1>, <byte2>, ..., <byteN> }
+
+Example: GCACONFIG = { 0x01, 0x02, 0x03 }
+Words Array: { <word1>, <word2>, ..., <wordN> }
+
+Example: MMIO@0x1234 = { 0x11223344, 0x55667788 }
+
+=== Syntax Examples ===
+GCACONFIG = { 0x01, 0x02, 0x03 }
+DISCOVERY = { 0xFF, 0xFE, 0xFD }
+
+SYSRAM@0x1000 = { 0xAA, 0xBB, 0xCC }
+VRAM@0x2000 = { 0xDD, 0xEE, 0xFF }
+
+MMIO@0x3000 = { 0x11223344, 0x55667788 }
+VGPR@0x4000 = { 0x99AABBCC, 0xDDEEFF00 }
+SGPR@0x5000 = { 0x11223344, 0x55667788 }
+
+WAVESTATUS@0x6000 = { 0xABCDEF01, 0x23456789 }
+RINGDATA = { 0x12345678, 0x87654321 }
+
+=== Comments ===
+Comments can be added to the test harness data file using a semicolon (;). Everything after the semicolon on a line is considered a comment and will be ignored by the parser.
+
+GCACONFIG = { 0x01, 0x02, 0x03 }; This is a configuration block
+
+=== Whitespace ===
+Whitespace (spaces, tabs, newlines) can be used freely to improve readability. The parser will automatically skip over whitespace and comments.
+
+GCACONFIG = {
+    0x01, 0x02, 0x03
+}

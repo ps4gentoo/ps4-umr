@@ -20,12 +20,9 @@
 0x131B kaveri.asic
 0x131C kaveri.asic
 0x131D kaveri.asic
-0x9920 liverpool.asic
-0x9922 liverpool.asic
-0x9923 liverpool.asic
-0x9924 gladius.asic
 0x13FE cyan_skillfish.asic
 0x143F cyan_skillfish.asic
+0x15BF phoenix
 0x15D8 picasso.asic
 0x15DD raven1.asic
 0x15E7 renoir.asic
@@ -248,6 +245,15 @@
 0x7423 beige_goby.asic
 0x7424 beige_goby.asic
 0x743F beige_goby.asic
+0x7440 navi31
+0x7448 navi31
+0x744C navi31
+0x747E navi32
+0x7480 navi33
+0x74A0 aqua_vanjaram
+0x74A1 aqua_vanjaram
+0x74A2 aqua_vanjaram
+0x74A5 aqua_vanjaram
 0x9830 kabini.asic
 0x9831 kabini.asic
 0x9832 kabini.asic
@@ -306,3 +312,7 @@
 0x69A2 vega12.asic
 0x69A3 vega12.asic
 0x69AF vega12.asic
+0x9920 liverpool.asic
+0x9922 liverpool.asic
+0x9923 liverpool.asic
+0x9924 gladius.asic

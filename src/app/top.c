@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -317,7 +317,6 @@ static struct umr_bitfield stat_nv_sensor_bits[] = {
 #define AMDGPU_INFO_FENCES_SIGNALED 0x80
 #define AMDGPU_INFO_FENCES_EMITTED  0x81
 #define AMDGPU_INFO_FENCES_DELTA    0x82
-#define AMDGPU_INFO_WAVES           0x83
 
 static struct umr_bitfield stat_drm_bits[] = {
 	{ "BYTES_MOVED", AMDGPU_INFO_NUM_BYTES_MOVED, DRM_INFO_BYTES, &umr_bitfield_default },
@@ -328,7 +327,6 @@ static struct umr_bitfield stat_drm_bits[] = {
 	{ "FENCES_SIGNALED", AMDGPU_INFO_FENCES_SIGNALED, DRM_INFO_COUNT, &umr_bitfield_default },
 	{ "FENCES_EMITTED", AMDGPU_INFO_FENCES_EMITTED, DRM_INFO_COUNT, &umr_bitfield_default },
 	{ "FENCES_DELTA", AMDGPU_INFO_FENCES_DELTA, DRM_INFO_COUNT, &umr_bitfield_default },
-	{ "WAVES", AMDGPU_INFO_WAVES, DRM_INFO_COUNT, &umr_bitfield_default },
 	{ NULL, 0, 0, NULL },
 };
 
@@ -400,30 +398,6 @@ static void analyze_fence_info(struct umr_asic *asic)
 		last_fence_emitted = fence_emitted;
 		fclose(f);
 	}
-}
-
-static unsigned vi_count_waves(struct umr_asic *asic)
-{
-	uint32_t se, sh, cu, simd, wave, count;
-	struct umr_wave_status ws;
-
-	// don't count waves if PG is enabled because it causes GPU hangs
-	if ((asic->config.gfx.pg_flags & ~0xffffeffc) ||
-	    (asic->config.gfx.cg_flags & 0xFF))
-		return 0;
-
-	count = 0;
-	for (se = 0; se < asic->config.gfx.max_shader_engines; se++)
-	for (sh = 0; sh < asic->config.gfx.max_sh_per_se; sh++)
-	for (cu = 0; cu < asic->config.gfx.max_cu_per_sh; cu++) {
-		for (simd = 0; simd < 1; simd++)
-		for (wave = 0; wave < 10; wave++) { //both simd/wave are hard coded at the moment...
-			umr_get_wave_status(asic, se, sh, cu, simd, wave, &ws);
-			if (ws.wave_status.halt || ws.wave_status.valid)
-				++count;
-		}
-	}
-	return count;
 }
 
 static void slice(char *r, char *s)
@@ -727,8 +701,6 @@ static void parse_drm(struct umr_asic *asic, uint32_t addr, struct umr_bitfield 
 			counts[j] = fence_signal_count;
 		else if (bits[j].start == AMDGPU_INFO_FENCES_DELTA)
 			counts[j] = last_fence_emitted - last_fence_signaled;
-		else if (bits[j].start == AMDGPU_INFO_WAVES)
-			counts[j] = vi_count_waves(asic);
 		else
 			umr_query_drm(asic, bits[j].start, &counts[j], sizeof(counts[j]));
 	}
@@ -770,8 +742,8 @@ static void grab_vram(struct umr_asic *asic)
 {
 	char name[256];
 	FILE *f;
-	unsigned long total, free, used;
-	unsigned long man_size, ram_usage, vis_usage;
+	unsigned long total = 0, free, used = 0;
+	unsigned long man_size, ram_usage, vis_usage = 0;
 
 	snprintf(name, sizeof(name)-1, "/sys/kernel/debug/dri/%d/amdgpu_vram_mm", asic->instance);
 	f = fopen(name, "rb");
@@ -845,9 +817,10 @@ static void analyze_drm_info(struct umr_asic *asic)
 void save_options(void)
 {
 	FILE *f;
-	char path[512];
+	char path[512], *e;
 
-	sprintf(path, "%s/.umrtop", getenv("HOME"));
+	e = getenv("HOME");
+	sprintf(path, "%s/.umrtop", e ? e : "~/");
 	f = fopen(path, "w");
 	if (f) {
 		fprintf(f, "%d\n", top_options.wide);
@@ -872,12 +845,13 @@ void save_options(void)
 void load_options(void)
 {
 	FILE *f;
-	char path[512];
+	char path[512], *e;
 	int r;
 
 	memset(&top_options, 0, sizeof(top_options));
 
-	sprintf(path, "%s/.umrtop", getenv("HOME"));
+	e = getenv("HOME");
+	sprintf(path, "%s/.umrtop", e ? e : "~/");
 	f = fopen(path, "r");
 	if (f) {
 		r = 1;
@@ -910,7 +884,8 @@ void load_options(void)
 }
 
 static struct {
-		char *name, *tag;
+		char name[32];
+		char *tag;
 		uint64_t counts[32];
 		int *opt, is_sensor;
 		uint32_t addr, mask[32], cmp[32];
@@ -918,8 +893,8 @@ static struct {
 		struct umr_bitfield *bits;
 } stat_counters[64];
 
-#define ENTRY(_j, _name, _bits, _opt, _tag) do { int _i = (_j); stat_counters[_i].name = _name; stat_counters[_i].bits = _bits; stat_counters[_i].opt = _opt; stat_counters[_i].tag = _tag; } while (0)
-#define ENTRY_SENSOR(_j, _name, _bits, _opt, _tag) do { int _i = (_j); stat_counters[_i].name = _name; stat_counters[_i].bits = _bits; stat_counters[_i].opt = _opt; stat_counters[_i].tag = _tag; stat_counters[_i].is_sensor = 1; } while (0)
+#define ENTRY(_j, _prefix, _name, _bits, _opt, _tag) do { int _i = (_j); snprintf(stat_counters[_i].name, sizeof(stat_counters[_i].name), "%s%s", _prefix, _name); stat_counters[_i].bits = _bits; stat_counters[_i].opt = _opt; stat_counters[_i].tag = _tag; } while (0)
+#define ENTRY_SENSOR(_j, _name, _bits, _opt, _tag) do { int _i = (_j); strcpy(stat_counters[_i].name, _name); stat_counters[_i].bits = _bits; stat_counters[_i].opt = _opt; stat_counters[_i].tag = _tag; stat_counters[_i].is_sensor = 1; } while (0)
 
 static void vi_handle_keys(int i)
 {
@@ -970,33 +945,47 @@ static int sriov_supported_vf(struct umr_asic *asic)
 
 static void top_build_vi_program(struct umr_asic *asic)
 {
+	const char *gfx_prefix;
+	const char *vcn_prefix;
 	int i, j, k;
-	char *regname;
+
+	gfx_prefix = "mm";
+	struct umr_ip_block* gfx = umr_find_ip_block(asic, "gfx", asic->options.vm_partition);
+	if (gfx && gfx->discoverable.maj >= 11)
+		gfx_prefix = "reg";
+
+	vcn_prefix = "mm";
+	struct umr_ip_block* vcn = umr_find_ip_block(asic, "vcn", asic->options.vm_partition);
+	if (vcn && ((vcn->discoverable.maj == 2 && vcn->discoverable.min >= 6) || vcn->discoverable.maj >= 4))
+		vcn_prefix = "reg";
 
 	stat_counters[0].bits = &stat_grbm_bits[0];
 	stat_counters[0].opt = &top_options.vi.grbm;
 	stat_counters[0].tag = "GRBM";
 
-	stat_counters[1].opt = &top_options.vi.grbm;
-	stat_counters[1].tag = stat_counters[0].tag;
-	stat_counters[1].name = "mmGRBM_STATUS2";
-	stat_counters[1].bits = &stat_grbm2_bits[0];
+	// which SE to read ...
+	if (options.use_bank == 1)
+		snprintf(stat_counters[0].name, sizeof(stat_counters[0].name), "%sGRBM_STATUS_SE%d", gfx_prefix, options.bank.grbm.se);
+	else
+		snprintf(stat_counters[0].name, sizeof(stat_counters[0].name), "%sGRBM_STATUS", gfx_prefix);
 
-	i = 2;
+	i = 1;
+
+	ENTRY(i++, gfx_prefix, "GRBM_STATUS2", &stat_grbm2_bits[0], &top_options.vi.grbm, "GRBM");
 
 	top_options.sriov.active_vf = -1;
 	top_options.sriov.num_vf = sriov_supported_vf(asic);
 	if (top_options.sriov.num_vf != 0) {
 		stat_counters[i].is_sensor = 3;
-		ENTRY(i++, "mmRLC_GPU_IOV_ACTIVE_FCN_ID", &stat_rlc_iov_bits[0],
+		ENTRY(i++, gfx_prefix, "RLC_GPU_IOV_ACTIVE_FCN_ID", &stat_rlc_iov_bits[0],
 			&top_options.vi.grbm, "GPU_IOV");
 	}
 
 	if (asic->config.gfx.family > 110)
-		ENTRY(i++, "mmRLC_GPM_STAT", &stat_rlc_gpm_bits[0], &top_options.vi.gfxpwr, "GFX PWR");
+		ENTRY(i++, gfx_prefix, "RLC_GPM_STAT", &stat_rlc_gpm_bits[0], &top_options.vi.gfxpwr, "GFX PWR");
 
 	// sensors
-	if (asic->family == FAMILY_NV) {
+	if (asic->family >= FAMILY_NV) {
 		ENTRY_SENSOR(i++, "GFX_SCLK", &stat_nv_sensor_bits[0], &top_options.vi.sensors, "Sensors");
 	} else if (asic->config.gfx.family == 141 || asic->config.gfx.family == 142) {
 		// Arctic Island Family/Raven
@@ -1020,30 +1009,30 @@ static void top_build_vi_program(struct umr_asic *asic)
 	sensor_bits = stat_counters[i-1].bits;
 
 	// More GFX bits
-	ENTRY(i++, "mmTA_STATUS", &stat_ta_bits[0], &top_options.vi.ta, "TA");
+	ENTRY(i++, gfx_prefix, "TA_STATUS", &stat_ta_bits[0], &top_options.vi.ta, "TA");
 
 	// VGT bits only valid for gfx7..9
 	if (asic->family < FAMILY_NV)
-		ENTRY(i++, "mmVGT_CNTL_STATUS", &stat_vgt_bits[0], &top_options.vi.vgt, "VGT");
+		ENTRY(i++, gfx_prefix, "VGT_CNTL_STATUS", &stat_vgt_bits[0], &top_options.vi.vgt, "VGT");
 
 	// UVD registers
 		if (asic->family < FAMILY_AI)
-			ENTRY(i++, "mmSRBM_STATUS", &stat_srbm_status_uvd_bits[0], &top_options.vi.uvd, "UVD");
+			ENTRY(i++, gfx_prefix, "SRBM_STATUS", &stat_srbm_status_uvd_bits[0], &top_options.vi.uvd, "UVD");
 		k = i;
-		ENTRY(i++, "mmUVD_CGC_STATUS", &stat_uvdclk_bits[0], &top_options.vi.uvd, "UVD");
+		ENTRY(i++, vcn_prefix, "UVD_CGC_STATUS", &stat_uvdclk_bits[0], &top_options.vi.uvd, "UVD");
 		// set PG flag for all UVD registers
 		for (; k < i; k++) {
 			stat_counters[k].addr_mask = REG_USE_PG_LOCK;  // UVD requires PG lock
 		}
 
-		k = j = i;
-		ENTRY(i++, "mmUVD_PGFSM_READ_TILE1", &stat_uvd_pgfsm1_bits[0], &top_options.vi.uvd, "UVD");
-		ENTRY(i++, "mmUVD_PGFSM_READ_TILE2", &stat_uvd_pgfsm2_bits[0], &top_options.vi.uvd, "UVD");
-		ENTRY(i++, "mmUVD_PGFSM_READ_TILE3", &stat_uvd_pgfsm3_bits[0], &top_options.vi.uvd, "UVD");
-		ENTRY(i++, "mmUVD_PGFSM_READ_TILE4", &stat_uvd_pgfsm4_bits[0], &top_options.vi.uvd, "UVD");
-		ENTRY(i++, "mmUVD_PGFSM_READ_TILE5", &stat_uvd_pgfsm5_bits[0], &top_options.vi.uvd, "UVD");
-		ENTRY(i++, "mmUVD_PGFSM_READ_TILE6", &stat_uvd_pgfsm6_bits[0], &top_options.vi.uvd, "UVD");
-		ENTRY(i++, "mmUVD_PGFSM_READ_TILE7", &stat_uvd_pgfsm7_bits[0], &top_options.vi.uvd, "UVD");
+		j = i;
+		ENTRY(i++, vcn_prefix, "UVD_PGFSM_READ_TILE1", &stat_uvd_pgfsm1_bits[0], &top_options.vi.uvd, "UVD");
+		ENTRY(i++, vcn_prefix, "UVD_PGFSM_READ_TILE2", &stat_uvd_pgfsm2_bits[0], &top_options.vi.uvd, "UVD");
+		ENTRY(i++, vcn_prefix, "UVD_PGFSM_READ_TILE3", &stat_uvd_pgfsm3_bits[0], &top_options.vi.uvd, "UVD");
+		ENTRY(i++, vcn_prefix, "UVD_PGFSM_READ_TILE4", &stat_uvd_pgfsm4_bits[0], &top_options.vi.uvd, "UVD");
+		ENTRY(i++, vcn_prefix, "UVD_PGFSM_READ_TILE5", &stat_uvd_pgfsm5_bits[0], &top_options.vi.uvd, "UVD");
+		ENTRY(i++, vcn_prefix, "UVD_PGFSM_READ_TILE6", &stat_uvd_pgfsm6_bits[0], &top_options.vi.uvd, "UVD");
+		ENTRY(i++, vcn_prefix, "UVD_PGFSM_READ_TILE7", &stat_uvd_pgfsm7_bits[0], &top_options.vi.uvd, "UVD");
 
 		// set compare/mask for UVD TILE registers
 		for (; j < i; j++) {
@@ -1054,7 +1043,7 @@ static void top_build_vi_program(struct umr_asic *asic)
 
 	// VCE registers
 		if (asic->family < FAMILY_AI)
-			ENTRY(i++, "mmSRBM_STATUS2", &stat_srbm_status2_vce_bits[0], &top_options.vi.vce, "VCE");
+			ENTRY(i++, gfx_prefix, "SRBM_STATUS2", &stat_srbm_status2_vce_bits[0], &top_options.vi.vce, "VCE");
 		k = i;
 
 		// set PG flag for all VCE registers
@@ -1063,23 +1052,12 @@ static void top_build_vi_program(struct umr_asic *asic)
 		}
 
 	// memory hub
-		k = i;
 		if (asic->family < FAMILY_AI)
-			ENTRY(i++, "mmMC_HUB_MISC_STATUS", &stat_mc_hub_bits[0], &top_options.vi.memory_hub, "MC HUB");
+			ENTRY(i++, gfx_prefix, "MC_HUB_MISC_STATUS", &stat_mc_hub_bits[0], &top_options.vi.memory_hub, "MC HUB");
 
 	// SDMA
-		k = i;
 		if (asic->family < FAMILY_AI)
-			ENTRY(i++, "mmSRBM_STATUS2", &stat_sdma_bits[0], &top_options.vi.sdma, "SDMA");
-
-	// which SE to read ...
-	regname = calloc(1, 64);
-	if (options.use_bank == 1)
-		snprintf(regname, 63, "mmGRBM_STATUS_SE%d", options.bank.grbm.se);
-	else
-		snprintf(regname, 63, "mmGRBM_STATUS");
-
-	stat_counters[0].name = regname;
+			ENTRY(i++, gfx_prefix, "SRBM_STATUS2", &stat_sdma_bits[0], &top_options.vi.sdma, "SDMA");
 
 	top_options.handle_key = vi_handle_keys;
 	top_options.helptext =
@@ -1101,7 +1079,7 @@ static void toggle_logger(void)
 		logfile = fopen(name, "a");
 
 		fprintf(logfile, "Time (seconds),");
-		for (i = 0; stat_counters[i].name; i++)
+		for (i = 0; stat_counters[i].name[0]; i++)
 			if (top_options.all || *stat_counters[i].opt)
 				for (j = 0; stat_counters[i].bits[j].regname != 0; j++)
 					fprintf(logfile, "%s.%s,", stat_counters[i].tag, stat_counters[i].bits[j].regname);
@@ -1149,9 +1127,8 @@ void umr_top(struct umr_asic *asic)
 	struct timespec req;
 	uint32_t rep;
 	time_t tt;
-	uint64_t ts;
 	char hostname[64] = { 0 };
-	char fname[64];
+	char fname[64], *e;
 	pthread_t sensor_thread;
 
 	// open drm file if not already open
@@ -1160,7 +1137,12 @@ void umr_top(struct umr_asic *asic)
 		asic->fd.drm = open(fname, O_RDWR);
 	}
 
-	if (getenv("HOSTNAME")) strcpy(hostname, getenv("HOSTNAME"));
+	e = getenv("HOSTNAME");
+	if (e) {
+		strcpy(hostname, e);
+	} else {
+		strcpy(hostname, "(nohost)");
+	}
 
 	// init stats
 	memset(&stat_counters, 0, sizeof stat_counters);
@@ -1170,11 +1152,11 @@ void umr_top(struct umr_asic *asic)
 	top_build_vi_program(asic);
 
 	// add DRM info
-	for (i = 0; stat_counters[i].name; i++);
-	ENTRY(i, "DRM", &stat_drm_bits[0], &top_options.drm, "DRM");
+	for (i = 0; stat_counters[i].name[0]; i++);
+	ENTRY(i, "", "DRM", &stat_drm_bits[0], &top_options.drm, "DRM");
 	stat_counters[i].is_sensor = 2;
 
-	for (i = 0; stat_counters[i].name; i++) {
+	for (i = 0; stat_counters[i].name[0]; i++) {
 		if (stat_counters[i].is_sensor == 0)
 			grab_bits(stat_counters[i].name, asic, stat_counters[i].bits, &stat_counters[i].addr);
 		else if (stat_counters[i].is_sensor == 3)
@@ -1210,15 +1192,14 @@ void umr_top(struct umr_asic *asic)
 	req.tv_sec = 0;
 	req.tv_nsec = 1000000000/rep; // 10ms
 
-	ts = 0;
 	while (!top_options.quit) {
-		for (i = 0; stat_counters[i].name; i++)
+		for (i = 0; stat_counters[i].name[0]; i++)
 			memset(stat_counters[i].counts, 0, sizeof(stat_counters[i].counts[0])*32);
 
 		for (i = 0; i < (int)rep / (top_options.high_frequency ? 10 : 1); i++) {
 			if (!top_options.sriov.num_vf || top_options.sriov.active_vf < 0 ||
 				top_options.sriov.active_vf == get_active_vf(asic, stat_counters[2].addr)) {
-				for (j = 0; stat_counters[j].name; j++) {
+				for (j = 0; stat_counters[j].name[0]; j++) {
 					if (top_options.all || *stat_counters[j].opt) {
 						if (stat_counters[j].is_sensor == 0)
 							parse_bits(asic, stat_counters[j].addr, stat_counters[j].bits, stat_counters[j].counts, stat_counters[j].mask, stat_counters[j].cmp, stat_counters[j].addr_mask);
@@ -1232,7 +1213,6 @@ void umr_top(struct umr_asic *asic)
 				}
 			}
 			nanosleep(&req, NULL);
-			ts += (req.tv_nsec / 1000000);
 		}
 		move(0, 0);
 		clear();
@@ -1293,7 +1273,7 @@ void umr_top(struct umr_asic *asic)
 			ctime(&tt));
 
 		// figure out padding
-		for (i = maxstrlen = 0; stat_counters[i].name; i++)
+		for (i = maxstrlen = 0; stat_counters[i].name[0]; i++)
 			if (top_options.all || *stat_counters[i].opt)
 				for (j = 0; stat_counters[i].bits[j].regname; j++)
 					if (stat_counters[i].bits[j].start != 255 && (k = strlen(stat_counters[i].bits[j].regname)) > maxstrlen)
@@ -1306,7 +1286,7 @@ void umr_top(struct umr_asic *asic)
 			clock_gettime(CLOCK_MONOTONIC, &tp);
 			fprintf(logfile, "%f,", ((double)tp.tv_sec * 1000000000.0 + tp.tv_nsec) / 1000000000.0);
 		}
-		for (i = 0; stat_counters[i].name; i++) {
+		for (i = 0; stat_counters[i].name[0]; i++) {
 			if (top_options.all || *stat_counters[i].opt) {
 				if (logfile != NULL) {
 					for (j = 0; stat_counters[i].bits[j].regname != 0; j++) {

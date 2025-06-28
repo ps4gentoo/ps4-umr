@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,7 +24,7 @@
  */
 #include "umrapp.h"
 
-int umr_print_gpu_metrics(struct umr_asic *asic)
+int umr_print_gpu_metrics(struct umr_asic *asic, int delay)
 {
 	FILE *f;
 	uint8_t *pp_data;
@@ -48,14 +48,30 @@ int umr_print_gpu_metrics(struct umr_asic *asic)
 		return -1;
 	}
 
-	fread(pp_data, 1, size, f);
-	fclose(f);
-
-	r = umr_dump_metrics(asic, pp_data, size);
-	if (r)
-		goto error;
-
+	r = 0;
+	do {
+		struct umr_key_value *kv;
+		int x;
+		fread(pp_data, 1, size, f);
+		kv = umr_dump_metrics(asic, pp_data, size);
+		if (!kv) {
+			r = -1;
+			goto error;
+		}
+		for (x = 0; x < kv->used; x++) {
+			asic->std_msg("%-30s: %s\n", kv->keys[x].name, kv->keys[x].value);
+		}
+		free(kv);
+		if (delay) {
+			usleep(abs(delay) * 1000UL);
+			fseek(f, 0, SEEK_SET);
+			if (delay > 0) {
+				delay = -delay;
+			}
+		}
+	} while (delay);
 error:
+	fclose(f);
 	free(pp_data);
 	return r;
 }

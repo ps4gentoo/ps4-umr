@@ -1,0 +1,59 @@
+How to create a new KAT (known answer test) vector for UMR
+
+Limitations:
+   - XGMI systems are not supported
+   - not all subsystems are captured like DRM/SENSORS/etc.
+   - If your system is not IP discovery capable make sure you add a "-f .${asic name}" to the command
+
+---------------
+How to make one
+---------------
+
+1. Get a command that exhibits what you want to insure doesn't break.
+
+ex.
+
+umr -RS gfx_0.0.0[.]
+
+to decode a GFX PM4 ring....
+
+2.  Now capture the output
+
+umr --test-log test/kat/${yourtestname}.txt ${cmd to make test} | tee test/kat/${yourtestname}.answer
+
+3.  Create a command file
+
+echo "${cmd to make test} --test-harness test/kat/${yourtestname}.txt" > test/kat/${yourtestname}.cmd
+
+Note the command shouldn't include umr in the file, e.g. from above
+
+-RS gfx_0.0.0 --test-harness test/kat/${yourtestname}.txt
+
+Note:  the test/kat/ path is MANDATORY don't skip that.
+
+4.  Add the files to the git repo
+
+5.  Run "bash test/runtest.sh"
+
+---------------------
+How to update vectors
+---------------------
+
+Sometimes external libraries or umr itself might change breaking your vector.
+
+If that happens you can run test/runtest.sh and when it errors out:
+
+1.  read the file
+
+/tmp/umr.test
+
+2.  If the output is correct then add it as 
+
+test/kat/${yourtestname}.answer${unique number}
+
+UMR's runtest.sh will check ALL matching .answer* files and if /one/ matches it considers the vector passed.
+
+Do NOT delete older answers, just add new ones.  This is to avoid breaking testing on installs using different
+system libraries (notably llvm-dev).
+
+

@@ -28,15 +28,18 @@ class InfoPanel : public Panel {
 public:
 	InfoPanel(struct umr_asic *asic) : Panel(asic) { }
 
-	void process_server_message(JSON_Object *request, JSON_Value *answer) {	}
+	void process_server_message(JSON_Object *response, void *raw_data, unsigned raw_data_size) {	}
 
 	bool display(float dt, const ImVec2& avail, bool can_send_request) {
 		static const char *families[] = {
-			"SI", "CIK", "VI", "AI", "NV", "NPI", "CFG",
+			"SI", "CIK", "VI", "AI", "NV", "GFX11", "NPI", "CFG",
 		};
 
 		ImGui::BeginChild("Info", ImVec2(avail.x / 2, 0), false, ImGuiWindowFlags_NoTitleBar);
 		ImGui::BeginTable("Info", 2, ImGuiTableFlags_Borders);
+		ImGui::TableSetupColumn("");
+		ImGui::TableSetupColumn("Details");
+		ImGui::TableHeadersRow();
 		ImGui::TableNextRow();
 		ImGui::TableSetColumnIndex(0); ImGui::Text("ASIC name");
 		ImGui::TableSetColumnIndex(1); ImGui::Text("#b58900%s", asic->asicname);
@@ -60,37 +63,42 @@ public:
 		ImGui::TableSetColumnIndex(1); ImGui::Text("#b58900%s", json_object_get_string(info, "vbios_version"));
 		ImGui::EndTable();
 
-		ImGui::BeginTable("Firmwares", 3, ImGuiTableFlags_Borders);
-		ImGui::TableSetupColumn("Firmware");
-		ImGui::TableSetupColumn("Feature version");
-		ImGui::TableSetupColumn("Firmware version");
-		ImGui::TableHeadersRow();
-		JSON_Array *fws = json_object_get_array(info, "firmwares");
-		for (int j = 0; j < json_array_get_count(fws); j++) {
-			JSON_Object *fw = json_object(json_array_get_value(fws, j));
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			ImGui::TextUnformatted(json_object_get_string(fw, "name")); ImGui::NextColumn(); ImGui::NextColumn();
-			ImGui::TableSetColumnIndex(1);
-			ImGui::Text("#b589000x%x", (unsigned)json_object_get_number(fw, "feature_version")); ImGui::NextColumn();
-			ImGui::TableSetColumnIndex(2);
-			ImGui::Text("#b589000x%x", (unsigned)json_object_get_number(fw, "firmware_version")); ImGui::NextColumn();
+		if (ImGui::TreeNode("Firmware versions")) {
+			ImGui::BeginTable("Firmwares", 3, ImGuiTableFlags_Borders);
+			ImGui::TableSetupColumn("Firmware");
+			ImGui::TableSetupColumn("Feature version");
+			ImGui::TableSetupColumn("Firmware version");
+			ImGui::TableHeadersRow();
+			JSON_Array *fws = json_object_get_array(info, "firmwares");
+			for (int j = 0; j < json_array_get_count(fws); j++) {
+				JSON_Object *fw = json_object(json_array_get_value(fws, j));
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextUnformatted(json_object_get_string(fw, "name")); ImGui::NextColumn(); ImGui::NextColumn();
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("#b589000x%x", (unsigned)json_object_get_number(fw, "feature_version")); ImGui::NextColumn();
+				ImGui::TableSetColumnIndex(2);
+				ImGui::Text("#b589000x%x", (unsigned)json_object_get_number(fw, "firmware_version")); ImGui::NextColumn();
+			}
+			ImGui::EndTable();
+			ImGui::TreePop();
 		}
-		ImGui::EndTable();
-		ImGui::EndChild();
-		ImGui::SameLine();
-		ImGui::BeginChild("IP Discovery", ImVec2(avail.x / 2, 0), false, ImGuiWindowFlags_NoTitleBar);
-		ImGui::BeginTable("HW blocks", 1, ImGuiTableFlags_Borders);
-		ImGui::TableSetupColumn("HW block names");
-		ImGui::TableHeadersRow();
-		for (int i = 0; i < asic->no_blocks; i++) {
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			ImGui::TextUnformatted(asic->blocks[i]->ipname);
+
+		if (ImGui::TreeNode("Hardware blocks")) {
+			ImGui::BeginTable("HW blocks", 1, ImGuiTableFlags_Borders);
+			ImGui::TableSetupColumn("HW block names");
+			ImGui::TableHeadersRow();
+			for (int i = 0; i < asic->no_blocks; i++) {
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextUnformatted(asic->blocks[i]->ipname);
+			}
+			ImGui::EndTable();
+			ImGui::TreePop();
 		}
-		ImGui::EndTable();
+
 		JSON_Object *pcie = json_object(json_object_get_value(info, "pcie"));
-		if (pcie) {
+		if (pcie && ImGui::TreeNode("PCIe info")) {
 			ImGui::BeginTable("PCIe", 2, ImGuiTableFlags_Borders);
 			ImGui::TableSetupColumn("Link Speed");
 			ImGui::TableSetupColumn("Link Width");
@@ -101,7 +109,14 @@ public:
 			ImGui::TableSetColumnIndex(1);
 			ImGui::Text("x %d", (int)json_object_get_number(pcie, "width"));
 			ImGui::EndTable();
+			ImGui::TreePop();
 		}
+		ImGui::EndChild();
+
+		ImGui::SameLine();
+
+		ImGui::BeginChild("IP Discovery", ImVec2(avail.x / 2, 0), false, ImGuiWindowFlags_NoTitleBar);
+
 		ImGui::EndChild();
 
 		return false;

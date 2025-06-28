@@ -1,12 +1,12 @@
-add_library(umrlow STATIC
+add_library(umrlow
   build_discovery_entry_table.c
   discover.c
+  enumerate_devices.c
   mmio.c
   query_drm.c
-  read_gpr.c
+  read_gprwave.c
   read_sensor.c
   mem.c
-  wave_status.c
   umr_free_asic.c
   umr_read_ring_data.c
   umr_shader_disasm.c

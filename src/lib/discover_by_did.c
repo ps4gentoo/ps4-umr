@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Advanced Micro Devices, Inc.
+ * Copyright (c) 2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -31,7 +31,7 @@ static int find_first_did(long did, long start_instance)
 
 	int x;
 
-	for (x = start_instance; x < 16; x++) {
+	for (x = start_instance; x < 128; x++) {
 		snprintf(name, sizeof(name)-1, "/sys/kernel/debug/dri/%d/name", x);
 		f = fopen(name, "r");
 		if (f) {
@@ -67,11 +67,15 @@ static int find_first_did(long did, long start_instance)
  *
  * @options: Options to bind to device
  * @did: The PCI Device ID to search for
+ * @errout: Function pointer to output error messages
+ * @tryipdiscovery: Pointer to an integer indicating whether IP discovery should be tried
  *
- * This will search the DID table for a specified ASIC that matches
- * the given @did and then search the DRI entries for the first
- * instance that matches.  Optionally @options->instance can be set
+ * This function searches the DID table for a specified ASIC that matches
+ * the given @did and then searches the DRI entries for the first
+ * instance that matches. Optionally, @options->instance can be set
  * to indicate which device you want to look for.
+ *
+ * @return A pointer to the discovered ASIC structure or NULL if no matching ASIC is found.
  */
 struct umr_asic *umr_discover_asic_by_did(struct umr_options *options, long did, umr_err_output errout, int *tryipdiscovery)
 {
@@ -80,7 +84,7 @@ struct umr_asic *umr_discover_asic_by_did(struct umr_options *options, long did,
 	char linebuf[128], lname[128];
 	uint32_t ldid;
 
-	f = umr_database_open(options->database_path, "pci.did");
+	f = umr_database_open(options->database_path, "pci.did", 0);
 	if (!f) {
 		errout("[ERROR]: Can't find [pci.did] file in database, required to map PCI DID to name\n");
 		errout("[ERROR]: The file [pci.did] is found in the source tree at 'database/pci.did'\n");

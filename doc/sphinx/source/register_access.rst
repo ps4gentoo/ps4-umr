@@ -72,21 +72,6 @@ name.  For example:
 
 would accomplish the same as the previous example.
 
---------------------------
-Reading an entire IP block
---------------------------
-
-At times having a snapshot of an entire IP block may be handy.  This
-is accomplished with the --scan command.  Some IP blocks do not
-respond well to being scanned (gfx blocks for instance) while others
-are indifferent to the behaviour.
-
-::
-
-	umr --scan uvd6
-
-Would scan and print all of the registers in the uvd6 block.
-
 -------------------
 GRBM Bank Selection
 -------------------

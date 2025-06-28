@@ -121,8 +121,6 @@ The options available are:
 +-------------------+-------------------------------------------------------------------------+
 | empty_log         | Empty MMIO tracer after reading it                                      |
 +-------------------+-------------------------------------------------------------------------+
-| follow            | Tells --logscan to continually read the MMIO tracer                     |
-+-------------------+-------------------------------------------------------------------------+
 | no_follow_ib      | Instructs the --ring-stream  command to not follow IBs pointed to by    |
 |                   | the ring                                                                |
 +-------------------+-------------------------------------------------------------------------+
@@ -136,6 +134,8 @@ The options available are:
 +-------------------+-------------------------------------------------------------------------+
 | halt_waves        | Halt active waves while reading wave status data                        |
 +-------------------+-------------------------------------------------------------------------+
+| wave64            | Scan for 64 or 32 threads per wave                                      |
++-------------------+-------------------------------------------------------------------------+
 | disasm_early_term | Terminate disassembly early for UMDs that don't use 0xBF9F0000 marker   |
 +-------------------+-------------------------------------------------------------------------+
 | no_disasm         | Disable LLVM disassembly.  Used on systems with outdated llvm-dev       |
@@ -148,7 +148,9 @@ The options available are:
 |                   | This option disables this and will print the full chain of PDEs for     |
 |                   | every page decoded.                                                     |
 +-------------------+-------------------------------------------------------------------------+
-| no_scan_waves     | Disable scaning for wave data during --ring-stream  output              |
+| force_asic_file   | Force the use of static .asic files instead of trying IP discovery      |
++-------------------+-------------------------------------------------------------------------+
+| export_model      | Export a mostly complete .soc15/.asic model from IP discovered data     |
 +-------------------+-------------------------------------------------------------------------+
 | full_shader       | Always print the full shader in --waves and --ring-stream  output       |
 +-------------------+-------------------------------------------------------------------------+
