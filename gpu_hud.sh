@@ -16,8 +16,10 @@ export GALLIUM_HUD=".dfps:160,frametime,cpu+GPU-load:100=gpu,${cores_str}:100"
 #### For Vulkan:
 
 # more options:
-export VK_LAYER_MESA_OVERLAY_CONFIG="position=top-left"
+export VK_LAYER_MESA_OVERLAY_CONFIG="position=top-left,output_file=/dev/null"
 export VK_INSTANCE_LAYERS=VK_LAYER_MESA_overlay
 
-"$@" &
-disown -h %+
+
+"$@"
+#"$@" &
+#disown -h %+
